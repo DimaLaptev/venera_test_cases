@@ -1,0 +1,30 @@
+services:
+  ord_depo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: 1000
+        GID: 1000
+    container_name: ord_depo
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - ahml_files:/mnt/share
+      - ahml_files_as:/mnt/share_as
+    user: "1000:1000"
+
+volumes:
+  ahml_files:
+    driver: local
+    driver_opts:
+      type: cifs
+      o: "username=${CIFS_USERNAME},password=${CIFS_PASSWORD},uid=1000,gid=1000"
+      device: "//dc-41.ahml1.ru/Agency"
+  ahml_files_as:
+    driver: local
+    driver_opts:
+      type: cifs
+      o: "username=${CIFS_USERNAME},password=${CIFS_PASSWORD},uid=1000,gid=1000"
+      device: "//dc-41.ahml1.ru/AS"

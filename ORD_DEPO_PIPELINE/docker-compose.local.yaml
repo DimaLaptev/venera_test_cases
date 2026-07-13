@@ -1,0 +1,18 @@
+services:
+  ord_depo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: 1000
+        GID: 1000
+    container_name: ord_depo
+    env_file:
+      - .env
+    environment:
+      REPORTS_DEPO_DIRECTORY: /mnt/share/
+      MAIL_MOCK: "1"
+    restart: unless-stopped
+    volumes:
+      - ..:/mnt/share
+    user: "1000:1000"
