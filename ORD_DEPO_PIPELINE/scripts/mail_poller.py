@@ -31,8 +31,8 @@ def _smtp_from_config(cfg: AppConfig) -> SmtpClient:
     )
 
 
-def process_once(cfg: AppConfig) -> int:
-    """Один цикл опроса. Возвращает число обработанных писем Ord."""
+def process_once(cfg: AppConfig, seen_periods: set[str]) -> int:
+    """Один цикл опроса. Возвращает число запущенных сборок Ord."""
     smtp = _smtp_from_config(cfg)
     processed = 0
 
@@ -54,6 +54,7 @@ def process_once(cfg: AppConfig) -> int:
 
     # Сначала fetch + mark_seen, затем долгая сборка — иначе IMAP-сессия
     # обрывается сервером и письмо остаётся UNSEEN (повторный запуск).
+    # Повтор по тому же периоду: письмо только помечаем прочитанным, сборку не дублируем.
     jobs: list[tuple[IncomingMail, str]] = []
     with ImapClient(
         host=cfg.mail.server,
@@ -67,9 +68,17 @@ def process_once(cfg: AppConfig) -> int:
             period = parse_ord_subject(mail.subject)
             if period is None:
                 continue
+            seen_uids.append(mail.uid)
+            if period in seen_periods:
+                print(
+                    f"Письмо UID={mail.uid} тема={mail.subject!r} → период {period} "
+                    f"уже обработан, пропуск сборки",
+                    flush=True,
+                )
+                continue
             print(f"Письмо UID={mail.uid} тема={mail.subject!r} → период {period}", flush=True)
             jobs.append((mail, period))
-            seen_uids.append(mail.uid)
+            seen_periods.add(period)
         if seen_uids:
             imap.mark_seen(seen_uids)
 
@@ -113,11 +122,12 @@ def run_loop(cfg: AppConfig, *, once: bool = False) -> int:
         f"reports_root={cfg.reports_root} mock={cfg.mail.mock}",
         flush=True,
     )
+    seen_periods: set[str] = set()
     while True:
         try:
-            n = process_once(cfg)
+            n = process_once(cfg, seen_periods)
             if n:
-                print(f"Обработано писем Ord: {n}", flush=True)
+                print(f"Запущено сборок Ord: {n}", flush=True)
         except Exception:
             print(traceback.format_exc(), file=sys.stderr, flush=True)
         if once:
