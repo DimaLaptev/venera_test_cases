@@ -13,7 +13,7 @@ PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIPELINE_ROOT / "src"))
 
 from config import AppConfig, load_config  # noqa: E402
-from mail.imap_client import ImapClient  # noqa: E402
+from mail.imap_client import ImapClient, IncomingMail  # noqa: E402
 from mail.smtp_client import SmtpClient  # noqa: E402
 from mail.subject import parse_ord_subject  # noqa: E402
 from runner import run_ord_period  # noqa: E402
@@ -52,6 +52,9 @@ def process_once(cfg: AppConfig) -> int:
     if missing:
         raise RuntimeError(f"Не заданы переменные окружения: {', '.join(missing)}")
 
+    # Сначала fetch + mark_seen, затем долгая сборка — иначе IMAP-сессия
+    # обрывается сервером и письмо остаётся UNSEEN (повторный запуск).
+    jobs: list[tuple[IncomingMail, str]] = []
     with ImapClient(
         host=cfg.mail.server,
         username=cfg.mail.username,
@@ -65,39 +68,42 @@ def process_once(cfg: AppConfig) -> int:
             if period is None:
                 continue
             print(f"Письмо UID={mail.uid} тема={mail.subject!r} → период {period}", flush=True)
-            processed += 1
-            try:
-                result = run_ord_period(
-                    cfg.pipeline_root,
-                    cfg.reports_root,
-                    period=period,
-                )
-                if result.ok:
-                    print(result.message, flush=True)
-                else:
-                    print(result.message, file=sys.stderr, flush=True)
-                    to_addr = mail.from_addr or cfg.mail.recipient
-                    if to_addr:
-                        smtp.send_error_reply(
-                            to_addr=to_addr,
-                            period=period,
-                            error_text=result.message,
-                            original_subject=mail.subject,
-                        )
-            except Exception:
-                err = traceback.format_exc()
-                print(err, file=sys.stderr, flush=True)
+            jobs.append((mail, period))
+            seen_uids.append(mail.uid)
+        if seen_uids:
+            imap.mark_seen(seen_uids)
+
+    for mail, period in jobs:
+        processed += 1
+        try:
+            result = run_ord_period(
+                cfg.pipeline_root,
+                cfg.reports_root,
+                period=period,
+            )
+            if result.ok:
+                print(result.message, flush=True)
+            else:
+                print(result.message, file=sys.stderr, flush=True)
                 to_addr = mail.from_addr or cfg.mail.recipient
                 if to_addr:
                     smtp.send_error_reply(
                         to_addr=to_addr,
                         period=period,
-                        error_text=err,
+                        error_text=result.message,
                         original_subject=mail.subject,
                     )
-            seen_uids.append(mail.uid)
-        if seen_uids:
-            imap.mark_seen(seen_uids)
+        except Exception:
+            err = traceback.format_exc()
+            print(err, file=sys.stderr, flush=True)
+            to_addr = mail.from_addr or cfg.mail.recipient
+            if to_addr:
+                smtp.send_error_reply(
+                    to_addr=to_addr,
+                    period=period,
+                    error_text=err,
+                    original_subject=mail.subject,
+                )
     return processed
 
 
