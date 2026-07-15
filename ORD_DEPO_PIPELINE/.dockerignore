@@ -1,0 +1,40 @@
+# Secrets (compose подставляет через env_file на runtime)
+.env
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+
+# Tests / caches
+tests/
+.pytest_cache/
+pytest-cache-files-*/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Docker / VCS / IDE
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+Dockerfile*
+docker-compose*.yaml
+docker-compose*.yml
+.idea/
+.vscode/
+
+# Runtime / docs (headers.json нужен — не *.md из memory)
+tmp/
+*.md
+memory/*.md
+source/
