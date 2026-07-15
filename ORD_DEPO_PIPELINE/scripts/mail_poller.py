@@ -11,6 +11,7 @@ from pathlib import Path
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIPELINE_ROOT / "src"))
+sys.path.insert(0, str(PIPELINE_ROOT))
 
 from config import AppConfig, load_config  # noqa: E402
 from mail.imap_client import ImapClient, IncomingMail  # noqa: E402

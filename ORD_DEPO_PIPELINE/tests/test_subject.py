@@ -7,6 +7,7 @@ from pathlib import Path
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIPELINE_ROOT / "src"))
+sys.path.insert(0, str(PIPELINE_ROOT))
 
 from mail.subject import parse_ord_subject
 

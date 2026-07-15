@@ -17,15 +17,13 @@ RUN pip install --no-cache-dir -U "pip<25" \
 
 COPY --chown=app:app . .
 
-RUN sed -i 's/\r$//' scripts/entrypoint.sh \
-    && chmod +x scripts/entrypoint.sh \
-    && mkdir -p tmp/mail_mock \
+RUN mkdir -p tmp/mail_mock \
     && chown -R app:app /app
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/src \
+    PYTHONPATH=/app:/app/src \
     REPORTS_DEPO_DIRECTORY=/mnt/share/
 
 USER app
 
-ENTRYPOINT ["/app/scripts/entrypoint.sh"]
+ENTRYPOINT ["python", "/app/scripts/mail_poller.py"]

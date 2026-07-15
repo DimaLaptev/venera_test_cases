@@ -34,7 +34,7 @@ python scripts/run_pipeline.py --period 2026_01
 
 ```bash
 cd ORD_DEPO_PIPELINE
-# заполнить .env (см. .env.example)
+# заполнить .env (см. .env_example)
 docker compose up -d --build
 ```
 
@@ -43,8 +43,8 @@ docker compose up -d --build
 ```bash
 cd ORD_DEPO_PIPELINE
 docker compose -f docker-compose.local.yaml build
-docker compose -f docker-compose.local.yaml run --rm ord_depo \
-  python scripts/run_pipeline.py --period 2026_01
+docker compose -f docker-compose.local.yaml run --rm --entrypoint python ord_depo \
+  scripts/run_pipeline.py --period 2026_01
 ```
 
 ## Справочник ENC

@@ -1,4 +1,4 @@
-"""Конфигурация ORD_DEPO_PIPELINE из env и config/paths.yaml."""
+"""Конфигурация ORD_DEPO_PIPELINE из .env (python-dotenv)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,14 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-PIPELINE_ROOT = Path(__file__).resolve().parents[1]
+from dotenv import load_dotenv
+
+PIPELINE_ROOT = Path(__file__).resolve().parent
+
+
+def _ensure_dotenv(pipeline_root: Path | None = None) -> None:
+    root = (pipeline_root or PIPELINE_ROOT).resolve()
+    load_dotenv(root / ".env", override=False)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -48,7 +55,8 @@ class AppConfig:
 
 
 def get_reports_root(pipeline_root: Path | None = None) -> Path:
-    """Корень данных из REPORTS_DEPO_DIRECTORY (fallback — родитель пайплайна)."""
+    """Корень данных из REPORTS_DEPO_DIRECTORY (.env)."""
+    _ensure_dotenv(pipeline_root)
     root = (pipeline_root or PIPELINE_ROOT).resolve()
     reports_raw = os.environ.get("REPORTS_DEPO_DIRECTORY", "").strip().strip("'\"")
     if reports_raw:
@@ -67,6 +75,7 @@ def default_sprav_workbook_path(pipeline_root: Path | None = None) -> Path:
 
 def load_config(pipeline_root: Path | None = None) -> AppConfig:
     root = (pipeline_root or PIPELINE_ROOT).resolve()
+    _ensure_dotenv(root)
     reports_root = get_reports_root(root)
 
     mail = MailConfig(

@@ -5,3 +5,4 @@ python-calamine>=0.4.0,<0.5
 pypdf>=4.0.0,<5
 py7zr>=0.20.8,<0.21
 pyzstd>=0.15.9,<0.17
+python-dotenv>=1.0.0,<2
