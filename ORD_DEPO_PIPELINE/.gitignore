@@ -1,3 +1,4 @@
 ORD_DEPO_PIPELINE/.env
 ORD_DEPO_PIPELINE/memory/Ord_Quantity_sheet_spec.md
 ORD_DEPO_PIPELINE/memory/ORD_DEPO_spec.md
+__pycache__/

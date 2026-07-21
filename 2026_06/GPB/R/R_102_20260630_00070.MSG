@@ -1,0 +1,9 @@
+ClientID:70
+DepoNum:102
+InstrNum:1650183
+ClientName:ПАО ДОМ.РФ
+ReportType:REMAINDERS
+ReportName:R_102_20260630_00070.MSG
+ReportDate:30.06.2026
+
+102;10934;1;3;1;98040.000;102080004;ZKL102080004;26-26-28/005/2010-124;На хранении

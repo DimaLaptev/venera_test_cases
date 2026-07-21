@@ -34,12 +34,14 @@ class SmtpClient:
         period: str,
         error_text: str,
         original_subject: str | None = None,
+        report_label: str = "Ord_Quantity",
+        subject_prefix: str = "Ord",
     ) -> Path | None:
-        subject = f"Re: Ord <{period}> — ошибка сборки"
+        subject = f"Re: {subject_prefix} <{period}> — ошибка сборки"
         if original_subject:
             subject = f"Re: {original_subject}"
         body = (
-            f"Сборка отчёта Ord_Quantity для периода {period} завершилась с ошибкой.\n\n"
+            f"Сборка отчёта {report_label} для периода {period} завершилась с ошибкой.\n\n"
             f"{error_text}\n"
         )
         msg = EmailMessage()
@@ -51,7 +53,8 @@ class SmtpClient:
         if self.mock:
             out_dir = self.mock_dir or Path(".")
             out_dir.mkdir(parents=True, exist_ok=True)
-            out = out_dir / f"mock_reply_{period}.txt"
+            kind = "svod" if subject_prefix.lower() == "svod" else "ord"
+            out = out_dir / f"mock_reply_{kind}_{period}.txt"
             out.write_text(
                 f"To: {to_addr}\nSubject: {subject}\n\n{body}",
                 encoding="utf-8",

@@ -1,0 +1,6 @@
+To: user@example.com
+Subject: Re: Svod <2026_06>
+
+Сборка отчёта СВОД_поДЕПО для периода 2026_06 завершилась с ошибкой.
+
+test error body

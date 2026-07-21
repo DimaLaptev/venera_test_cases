@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Слушатель почты: тема Ord <YYYY_MM> → сборка Ord_Quantity."""
+"""Слушатель почты: Ord <YYYY_MM> / Svod <YYYY_MM> → сборка отчётов."""
 
 from __future__ import annotations
 
@@ -16,8 +16,9 @@ sys.path.insert(0, str(PIPELINE_ROOT))
 from config import AppConfig, load_config  # noqa: E402
 from mail.imap_client import ImapClient, IncomingMail  # noqa: E402
 from mail.smtp_client import SmtpClient  # noqa: E402
-from mail.subject import parse_ord_subject  # noqa: E402
+from mail.subject import parse_ord_subject, parse_svod_subject  # noqa: E402
 from runner import run_ord_period  # noqa: E402
+from runner_svod import run_svod_period  # noqa: E402
 
 
 def _smtp_from_config(cfg: AppConfig) -> SmtpClient:
@@ -32,8 +33,31 @@ def _smtp_from_config(cfg: AppConfig) -> SmtpClient:
     )
 
 
-def process_once(cfg: AppConfig, seen_periods: set[str]) -> int:
-    """Один цикл опроса. Возвращает число запущенных сборок Ord."""
+def _send_error(
+    smtp: SmtpClient,
+    cfg: AppConfig,
+    mail: IncomingMail,
+    *,
+    period: str,
+    error_text: str,
+    report_label: str,
+    subject_prefix: str,
+) -> None:
+    to_addr = mail.from_addr or cfg.mail.recipient
+    if not to_addr:
+        return
+    smtp.send_error_reply(
+        to_addr=to_addr,
+        period=period,
+        error_text=error_text,
+        original_subject=mail.subject,
+        report_label=report_label,
+        subject_prefix=subject_prefix,
+    )
+
+
+def process_once(cfg: AppConfig, seen_jobs: set[str]) -> int:
+    """Один цикл опроса. Возвращает число запущенных сборок."""
     smtp = _smtp_from_config(cfg)
     processed = 0
 
@@ -55,8 +79,7 @@ def process_once(cfg: AppConfig, seen_periods: set[str]) -> int:
 
     # Сначала fetch + mark_seen, затем долгая сборка — иначе IMAP-сессия
     # обрывается сервером и письмо остаётся UNSEEN (повторный запуск).
-    # Повтор по тому же периоду: письмо только помечаем прочитанным, сборку не дублируем.
-    jobs: list[tuple[IncomingMail, str]] = []
+    jobs: list[tuple[IncomingMail, str, str]] = []  # mail, kind, period
     with ImapClient(
         host=cfg.mail.server,
         username=cfg.mail.username,
@@ -66,54 +89,74 @@ def process_once(cfg: AppConfig, seen_periods: set[str]) -> int:
         unseen = imap.fetch_unseen()
         seen_uids: list[str] = []
         for mail in unseen:
-            period = parse_ord_subject(mail.subject)
-            if period is None:
+            svod_period = parse_svod_subject(mail.subject)
+            ord_period = parse_ord_subject(mail.subject) if svod_period is None else None
+            if svod_period is not None:
+                kind, period = "svod", svod_period
+            elif ord_period is not None:
+                kind, period = "ord", ord_period
+            else:
                 continue
             seen_uids.append(mail.uid)
-            if period in seen_periods:
+            job_key = f"{kind}:{period}"
+            if job_key in seen_jobs:
                 print(
-                    f"Письмо UID={mail.uid} тема={mail.subject!r} → период {period} "
+                    f"Письмо UID={mail.uid} тема={mail.subject!r} → {job_key} "
                     f"уже обработан, пропуск сборки",
                     flush=True,
                 )
                 continue
-            print(f"Письмо UID={mail.uid} тема={mail.subject!r} → период {period}", flush=True)
-            jobs.append((mail, period))
-            seen_periods.add(period)
+            print(
+                f"Письмо UID={mail.uid} тема={mail.subject!r} → {job_key}",
+                flush=True,
+            )
+            jobs.append((mail, kind, period))
+            seen_jobs.add(job_key)
         if seen_uids:
             imap.mark_seen(seen_uids)
 
-    for mail, period in jobs:
+    for mail, kind, period in jobs:
         processed += 1
+        report_label = "СВОД_поДЕПО" if kind == "svod" else "Ord_Quantity"
+        subject_prefix = "Svod" if kind == "svod" else "Ord"
         try:
-            result = run_ord_period(
-                cfg.pipeline_root,
-                cfg.reports_root,
-                period=period,
-            )
+            if kind == "svod":
+                result = run_svod_period(
+                    cfg.pipeline_root,
+                    cfg.reports_root,
+                    period=period,
+                )
+            else:
+                result = run_ord_period(
+                    cfg.pipeline_root,
+                    cfg.reports_root,
+                    period=period,
+                )
             if result.ok:
                 print(result.message, flush=True)
             else:
                 print(result.message, file=sys.stderr, flush=True)
-                to_addr = mail.from_addr or cfg.mail.recipient
-                if to_addr:
-                    smtp.send_error_reply(
-                        to_addr=to_addr,
-                        period=period,
-                        error_text=result.message,
-                        original_subject=mail.subject,
-                    )
+                _send_error(
+                    smtp,
+                    cfg,
+                    mail,
+                    period=period,
+                    error_text=result.message,
+                    report_label=report_label,
+                    subject_prefix=subject_prefix,
+                )
         except Exception:
             err = traceback.format_exc()
             print(err, file=sys.stderr, flush=True)
-            to_addr = mail.from_addr or cfg.mail.recipient
-            if to_addr:
-                smtp.send_error_reply(
-                    to_addr=to_addr,
-                    period=period,
-                    error_text=err,
-                    original_subject=mail.subject,
-                )
+            _send_error(
+                smtp,
+                cfg,
+                mail,
+                period=period,
+                error_text=err,
+                report_label=report_label,
+                subject_prefix=subject_prefix,
+            )
     return processed
 
 
@@ -123,12 +166,12 @@ def run_loop(cfg: AppConfig, *, once: bool = False) -> int:
         f"reports_root={cfg.reports_root} mock={cfg.mail.mock}",
         flush=True,
     )
-    seen_periods: set[str] = set()
+    seen_jobs: set[str] = set()
     while True:
         try:
-            n = process_once(cfg, seen_periods)
+            n = process_once(cfg, seen_jobs)
             if n:
-                print(f"Запущено сборок Ord: {n}", flush=True)
+                print(f"Запущено сборок: {n}", flush=True)
         except Exception:
             print(traceback.format_exc(), file=sys.stderr, flush=True)
         if once:
@@ -137,7 +180,7 @@ def run_loop(cfg: AppConfig, *, once: bool = False) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="ORD DEPO mail poller")
+    parser = argparse.ArgumentParser(description="ORD/SVOD DEPO mail poller")
     parser.add_argument("--pipeline-root", type=Path, default=PIPELINE_ROOT)
     parser.add_argument(
         "--once",
