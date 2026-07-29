@@ -30,6 +30,8 @@ python scripts/run_svod_pipeline.py --period 2026_05
 
 Для smoke без сети: `MAIL_MOCK=1`.
 
+Техдолг по IMAP reconnect/retry: [`TECH_DEBT.md`](TECH_DEBT.md).
+
 ## Docker
 
 Прод:

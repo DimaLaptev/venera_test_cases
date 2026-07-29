@@ -58,7 +58,12 @@ def collect_do_rows(cfg, staging: Path, *, warn=None) -> list:
     return dedupe_rsd_do_rows(rows)
 
 
-def run_build(cfg, *, prior_from_svod: bool = True) -> int:
+def run_build(
+    cfg,
+    *,
+    prior_from_svod: bool = True,
+    debug_ngri: str | None = None,
+) -> int:
     report_date = cfg.report_date
     svod_path = cfg.svod_workbook
     svod_dom_path = cfg.svod_dom_workbook
@@ -89,9 +94,20 @@ def run_build(cfg, *, prior_from_svod: bool = True) -> int:
         layout=prior_layout,
         warn=sys.stdout,
     )
+    if debug_ngri:
+        depo_ia.debug_ngri_location("depo-ia (prior)", debug_ngri, out=sys.stdout)
+        depo_dom.debug_ngri_location("depo-dom (prior)", debug_ngri, out=sys.stdout)
     sprav2 = Sprav2Lookup.load(cfg.sprav_workbook)
 
-    rows_by_sheet = build_all_rows(do_rows, depo_ia, depo_dom, sprav1, sprav2, warn=sys.stdout)
+    rows_by_sheet = build_all_rows(
+        do_rows,
+        depo_ia,
+        depo_dom,
+        sprav1,
+        sprav2,
+        warn=sys.stdout,
+        debug_ngri=debug_ngri,
+    )
 
     _, _, ia_dups, dom_dups = write_svod_workbooks(
         svod_path,
@@ -177,6 +193,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--depo-ia", type=Path, default=None)
     parser.add_argument("--depo-dom", type=Path, default=None)
+    parser.add_argument(
+        "--debug-ngri",
+        type=str,
+        default=None,
+        help=(
+            "Диагностика prior-lookup для одной НГРИ: где лежит в depo-ia/depo-dom "
+            "и в каком кармане ищем при сборке"
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.period:
@@ -203,7 +228,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.depo_dom:
         cfg.depo_dom = args.depo_dom
 
-    return run_build(cfg, prior_from_svod=prior_from_svod)
+    return run_build(
+        cfg,
+        prior_from_svod=prior_from_svod,
+        debug_ngri=args.debug_ngri,
+    )
 
 
 if __name__ == "__main__":

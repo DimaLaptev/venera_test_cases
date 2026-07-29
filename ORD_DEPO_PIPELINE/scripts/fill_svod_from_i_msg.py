@@ -53,10 +53,9 @@ from svod_excel import (
     write_svod_rows,
 )
 from vtb_f752_xml import (
-    find_vtb_xls_for_xml,
-    find_vtb_zip_for_xml,
-    list_ngri_from_vtb_xls_path,
-    list_ngri_from_vtb_zip,
+    collect_vtb_ngri_for_xml,
+    format_vtb_missing_attachments_error,
+    list_vtb_xml_missing_attachments,
     parse_vtb_f752_xml,
 )
 
@@ -381,7 +380,10 @@ def main() -> int:
         "--input-dir-vtb-zip",
         type=Path,
         default=_ROOT / "2026_01" / "VTBSD" / "REP" / "XML_приложения",
-        help="Каталог приложений: одноимённый *.zip (НГРИ в .xls внутри) или одноимённый *.xls, если архива нет",
+        help=(
+            "Каталог приложений: одноимённый *.zip / *.xls / *.xlsx "
+            "(обязателен для каждого XML, кроме --no-vtb-zip)"
+        ),
     )
     parser.add_argument(
         "--no-vtb-xml",
@@ -391,7 +393,10 @@ def main() -> int:
     parser.add_argument(
         "--no-vtb-zip",
         action="store_true",
-        help="Не читать приложения для НГРИ (ни ZIP, ни одноимённый .xls из --input-dir-vtb-zip) — одна строка СВОД на XML с пустым НГРИ",
+        help=(
+            "Не читать приложения для НГРИ и не требовать одноимённый "
+            ".zip/.xls/.xlsx в --input-dir-vtb-zip — одна строка СВОД на XML с пустым НГРИ"
+        ),
     )
     parser.add_argument(
         "--debug-vtb-ngri",
@@ -665,6 +670,20 @@ def main() -> int:
                     vtb_files.append(p)
                 if not vtb_files:
                     print(f"Нет файлов *.xml в {vtb_xml_dir}")
+                elif not args.no_vtb_zip:
+                    missing = list_vtb_xml_missing_attachments(
+                        vtb_files,
+                        vtb_zip_dir,
+                    )
+                    if missing:
+                        print(
+                            format_vtb_missing_attachments_error(
+                                missing,
+                                vtb_zip_dir,
+                            ),
+                            file=sys.stderr,
+                        )
+                        return 1
                 dbg_z = args.debug_vtb_ngri
                 if dbg_z and not args.no_vtb_zip and not vtb_zip_dir.is_dir():
                     print(
@@ -681,34 +700,16 @@ def main() -> int:
                         continue
                     ngri_list: list[str] = []
                     if not args.no_vtb_zip and vtb_zip_dir.is_dir():
-                        zp = find_vtb_zip_for_xml(
+                        ngri_list = collect_vtb_ngri_for_xml(
                             xp,
                             vtb_zip_dir,
                             debug=dbg_z,
                             context=xp.name,
                         )
-                        if zp is not None:
-                            ngri_list = list_ngri_from_vtb_zip(
-                                zp,
-                                debug=dbg_z,
-                                context=xp.name,
-                            )
-                        else:
-                            xls_p = find_vtb_xls_for_xml(
-                                xp,
-                                vtb_zip_dir,
-                                debug=dbg_z,
-                                context=xp.name,
-                            )
-                            if xls_p is not None:
-                                ngri_list = list_ngri_from_vtb_xls_path(
-                                    xls_p,
-                                    debug=dbg_z,
-                                    context=xp.name,
-                                )
                         if dbg_z and ngri_list:
                             print(
-                                f"[VTB НГРИ] {xp.name}: итого НГРИ (ZIP или .xls): {len(ngri_list)}",
+                                f"[VTB НГРИ] {xp.name}: итого НГРИ "
+                                f"(ZIP или .xls/.xlsx): {len(ngri_list)}",
                                 file=sys.stderr,
                             )
                     if not ngri_list:

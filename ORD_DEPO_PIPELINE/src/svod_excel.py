@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import re
+from copy import copy
 from pathlib import Path
 from typing import Literal
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import PatternFill
+from openpyxl.worksheet.worksheet import Worksheet
 
 from codifier_table import (
     CodifierRow,
@@ -1250,22 +1253,59 @@ def ensure_errors_sheet(wb) -> None:
         ws.cell(row=1, column=col, value=title)
 
 
-def clear_svod_data(ws) -> None:
+def clear_svod_data(ws: Worksheet) -> None:
     max_r = ws.max_row or 1
     if max_r <= 1:
         return
+    empty_fill = PatternFill(fill_type=None)
     for r in range(2, max_r + 1):
         for c in range(1, len(SVOD_HEADERS) + 1):
-            ws.cell(row=r, column=c, value=None)
+            cell = ws.cell(row=r, column=c)
+            cell.value = None
+            cell.fill = empty_fill
 
 
-def clear_errors_data(ws) -> None:
+def clear_errors_data(ws: Worksheet) -> None:
     max_r = ws.max_row or 1
     if max_r <= 1:
         return
     for r in range(2, max_r + 1):
         for c in range(1, len(ERRORS_SHEET_HEADERS) + 1):
             ws.cell(row=r, column=c, value=None)
+
+
+def _header_cell_has_fill(cell) -> bool:
+    fill = cell.fill
+    if fill is None:
+        return False
+    ft = getattr(fill, "fill_type", None)
+    return bool(ft) and ft != "none"
+
+
+def apply_svod_column_fills_from_header(
+    ws: Worksheet,
+    *,
+    first_row: int = 2,
+    last_row: int,
+) -> None:
+    """Копирует заливку (fill) шапки (строка 1) на строки данных по тем же колонкам.
+
+    В шаблоне Ord_Quantity колонки F/G/L/N и др. часто закрашены вручную; openpyxl при
+    записи ``value`` не наследует заливку столбца Excel — без этого данные остаются белыми.
+    """
+    if last_row < first_row:
+        return
+    col_fills: list[PatternFill | None] = []
+    for c in range(1, len(SVOD_HEADERS) + 1):
+        header = ws.cell(row=1, column=c)
+        if _header_cell_has_fill(header):
+            col_fills.append(copy(header.fill))
+        else:
+            col_fills.append(None)
+    for r in range(first_row, last_row + 1):
+        for c, fill in enumerate(col_fills, start=1):
+            if fill is not None:
+                ws.cell(row=r, column=c).fill = copy(fill)
 
 
 def write_svod_rows(
@@ -1280,6 +1320,8 @@ def write_svod_rows(
     for i, row in enumerate(rows_out, start=2):
         for j, val in enumerate(row, start=1):
             ws.cell(row=i, column=j, value=val)
+    if rows_out:
+        apply_svod_column_fills_from_header(ws, first_row=2, last_row=1 + len(rows_out))
     ensure_errors_sheet(wb)
     ws_err = wb["Ошибки"]
     clear_errors_data(ws_err)

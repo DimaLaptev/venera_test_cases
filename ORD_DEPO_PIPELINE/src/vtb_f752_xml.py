@@ -1,4 +1,4 @@
-"""Парсинг отчётов ВТБ СД F752 (*.xml) и одноимённых ZIP: НГРИ берутся из .xls внутри архива (напр. «Приложение 33.xls»)."""
+"""Парсинг отчётов ВТБ СД F752 (*.xml) и одноимённых ZIP/.xls/.xlsx: НГРИ из приложения (напр. «Приложение 33»)."""
 
 from __future__ import annotations
 
@@ -61,6 +61,11 @@ def _ngri_from_xlrd_sheet(sh, *, debug: bool, context: str, member: str) -> list
     return out
 
 
+def _raw_looks_like_ooxml(raw: bytes) -> bool:
+    """OOXML (.xlsx / иногда .xls, сохранённый как ZIP) начинается с PK."""
+    return bool(raw) and raw[:2] == b"PK"
+
+
 def _ngri_from_xls_bytes(
     raw: bytes,
     member: str,
@@ -68,6 +73,14 @@ def _ngri_from_xls_bytes(
     debug: bool,
     context: str,
 ) -> list[str]:
+    # Excel часто отдаёт «Приложение 33.xls», которое на деле OOXML — xlrd 2.x такое не читает.
+    if _raw_looks_like_ooxml(raw):
+        _vtb_ngri_debug(
+            debug,
+            context,
+            f"«{member}»: содержимое OOXML (PK…) — читаем как .xlsx",
+        )
+        return _ngri_from_xlsx_bytes(raw, member, debug=debug, context=context)
     try:
         import xlrd
     except ModuleNotFoundError:
@@ -80,11 +93,15 @@ def _ngri_from_xls_bytes(
     try:
         book = xlrd.open_workbook(file_contents=raw, formatting_info=False)
     except Exception as e:
+        err = f"{type(e).__name__}: {e}"
         _vtb_ngri_debug(
             debug,
             context,
-            f"«{member}»: xlrd.open_workbook не открыл файл ({type(e).__name__}: {e})",
+            f"«{member}»: xlrd.open_workbook не открыл файл ({err})",
         )
+        # xlrd 2: «Excel xlsx file; not supported» — пробуем openpyxl
+        if "xlsx" in err.lower() or "openpyxl" in err.lower():
+            return _ngri_from_xlsx_bytes(raw, member, debug=debug, context=context)
         return []
     try:
         sh = book.sheet_by_index(0)
@@ -405,6 +422,66 @@ def list_ngri_from_vtb_zip(
         zf.close()
 
 
+def find_vtb_appendix_for_xml(
+    xml_path: Path,
+    apps_dir: Path,
+    *,
+    debug: bool = False,
+    context: str = "",
+) -> Path | None:
+    """Если ZIP нет — одноимённое приложение ``.xls`` / ``.xlsx`` (тот же stem, что у XML).
+
+    Порядок: ``.xls`` → ``.xlsx`` (с вариантами регистра в суффиксе).
+    """
+    stem = xml_path.stem
+    candidates = (
+        f"{stem}.xls",
+        f"{stem}.XLS",
+        f"{stem}.Xls",
+        f"{stem}.xlsx",
+        f"{stem}.XLSX",
+        f"{stem}.Xlsx",
+    )
+    for name in candidates:
+        p = (apps_dir / name).resolve()
+        if p.is_file():
+            _vtb_ngri_debug(
+                debug,
+                context,
+                f"найдено одноимённое приложение (вместо ZIP): «{p.name}»",
+            )
+            return p
+    stem_l = stem.lower()
+    try:
+        preferred: list[Path] = []
+        for f in apps_dir.iterdir():
+            if not f.is_file():
+                continue
+            if f.suffix.lower() not in (".xls", ".xlsx"):
+                continue
+            if f.stem.lower() == stem_l:
+                preferred.append(f.resolve())
+        # .xls раньше .xlsx при совпадении stem
+        preferred.sort(key=lambda p: (0 if p.suffix.lower() == ".xls" else 1, p.name.lower()))
+        if preferred:
+            rp = preferred[0]
+            _vtb_ngri_debug(
+                debug,
+                context,
+                f"найдено одноимённое приложение (stem без учёта регистра): «{rp.name}»",
+            )
+            return rp
+    except OSError:
+        pass
+    _vtb_ngri_debug(
+        debug,
+        context,
+        f"одноимённое .xls/.xlsx не найдено в «{apps_dir}» "
+        f"(ожидалось: {stem}.xls | {stem}.xlsx)",
+    )
+    return None
+
+
 def find_vtb_xls_for_xml(
     xml_path: Path,
     xls_dir: Path,
@@ -412,53 +489,26 @@ def find_vtb_xls_for_xml(
     debug: bool = False,
     context: str = "",
 ) -> Path | None:
-    """Если одноимённого ZIP нет — тот же stem, расширение .xls в каталоге приложений."""
-    stem = xml_path.stem
-    for name in (f"{stem}.xls", f"{stem}.XLS", f"{stem}.Xls"):
-        p = (xls_dir / name).resolve()
-        if p.is_file():
-            _vtb_ngri_debug(
-                debug,
-                context,
-                f"найден одноимённый .xls (вместо ZIP): «{p.name}»",
-            )
-            return p
-    stem_l = stem.lower()
-    try:
-        for f in xls_dir.iterdir():
-            if not f.is_file():
-                continue
-            if f.suffix.lower() != ".xls":
-                continue
-            if f.stem.lower() == stem_l:
-                rp = f.resolve()
-                _vtb_ngri_debug(
-                    debug,
-                    context,
-                    f"найден одноимённый .xls (совпадение stem без учёта регистра): «{f.name}»",
-                )
-                return rp
-    except OSError:
-        pass
-    _vtb_ngri_debug(
-        debug,
-        context,
-        f"одноимённый .xls не найден в «{xls_dir}» (ожидалось: {stem}.xls)",
+    """Алиас: одноимённое приложение ``.xls`` / ``.xlsx`` в каталоге приложений."""
+    return find_vtb_appendix_for_xml(
+        xml_path,
+        xls_dir,
+        debug=debug,
+        context=context,
     )
-    return None
 
 
-def list_ngri_from_vtb_xls_path(
-    xls_path: Path,
+def list_ngri_from_vtb_appendix_path(
+    appendix_path: Path,
     *,
     debug: bool = False,
     context: str = "",
 ) -> list[str]:
-    """Список НГРИ из отдельного файла .xls на диске (тот же макет, что внутри ZIP)."""
+    """НГРИ из отдельного ``.xls`` / ``.xlsx`` (макет «Приложение 33»: строка 8, колонка B)."""
     ctx = context.strip()
-    p = Path(xls_path)
+    p = Path(appendix_path)
     if not p.is_file():
-        _vtb_ngri_debug(debug, ctx, f".xls по пути не найден: {p}")
+        _vtb_ngri_debug(debug, ctx, f"приложение не найдено: {p}")
         return []
     try:
         raw = p.read_bytes()
@@ -469,7 +519,99 @@ def list_ngri_from_vtb_xls_path(
             f"не удалось прочитать «{p.name}» ({type(e).__name__}: {e})",
         )
         return []
+    suf = p.suffix.lower()
+    if suf == ".xlsx" or _raw_looks_like_ooxml(raw):
+        return _ngri_from_xlsx_bytes(raw, p.name, debug=debug, context=ctx)
     return _ngri_from_xls_bytes(raw, p.name, debug=debug, context=ctx)
+
+
+def list_ngri_from_vtb_xls_path(
+    xls_path: Path,
+    *,
+    debug: bool = False,
+    context: str = "",
+) -> list[str]:
+    """Алиас ``list_ngri_from_vtb_appendix_path`` (``.xls`` и ``.xlsx``)."""
+    return list_ngri_from_vtb_appendix_path(
+        xls_path,
+        debug=debug,
+        context=context,
+    )
+
+
+def collect_vtb_ngri_for_xml(
+    xml_path: Path,
+    apps_dir: Path,
+    *,
+    debug: bool = False,
+    context: str = "",
+) -> list[str]:
+    """НГРИ для XML: ZIP (тот же stem) → иначе одноимённое ``.xls``/``.xlsx``.
+
+    Пустой список — вызывающий код обычно подставляет ``[\"\"]`` (одна строка СВОД с «-»),
+    либо останавливает сборку, если приложение обязательно (см. ``find_vtb_attachment_for_xml``).
+    """
+    ctx = context.strip() or xml_path.name
+    att = find_vtb_attachment_for_xml(
+        xml_path,
+        apps_dir,
+        debug=debug,
+        context=ctx,
+    )
+    if att is None:
+        return []
+    if att.suffix.lower() == ".zip":
+        return list_ngri_from_vtb_zip(att, debug=debug, context=ctx)
+    return list_ngri_from_vtb_appendix_path(att, debug=debug, context=ctx)
+
+
+def find_vtb_attachment_for_xml(
+    xml_path: Path,
+    apps_dir: Path,
+    *,
+    debug: bool = False,
+    context: str = "",
+) -> Path | None:
+    """Одноимённое приложение для XML: ``.zip`` → иначе ``.xls`` / ``.xlsx`` (тот же stem)."""
+    ctx = context.strip() or xml_path.name
+    if not apps_dir.is_dir():
+        _vtb_ngri_debug(debug, ctx, f"каталог приложений не найден: {apps_dir}")
+        return None
+    zp = find_vtb_zip_for_xml(xml_path, apps_dir, debug=debug, context=ctx)
+    if zp is not None:
+        return zp
+    return find_vtb_appendix_for_xml(xml_path, apps_dir, debug=debug, context=ctx)
+
+
+def list_vtb_xml_missing_attachments(
+    xml_paths: list[Path],
+    apps_dir: Path,
+) -> list[Path]:
+    """XML без одноимённого ZIP/XLS/XLSX в ``apps_dir`` (порядок как во входе)."""
+    missing: list[Path] = []
+    for xp in xml_paths:
+        if find_vtb_attachment_for_xml(xp, apps_dir) is None:
+            missing.append(xp)
+    return missing
+
+
+def format_vtb_missing_attachments_error(
+    missing: list[Path],
+    apps_dir: Path,
+) -> str:
+    """Текст ошибки для stderr / SMTP-отбивки."""
+    lines = [
+        "ВТБ СД: для XML не найдено одноимённое приложение "
+        f"(ожидается тот же stem: .zip / .xls / .xlsx) в каталоге: {apps_dir}",
+        "Сборка остановлена. Добавьте приложения и повторите запуск.",
+        "Файлы без приложения:",
+    ]
+    for xp in missing:
+        stem = xp.stem
+        lines.append(
+            f"  - {xp.name}  (нужно: {stem}.zip | {stem}.xls | {stem}.xlsx)",
+        )
+    return "\n".join(lines)
 
 
 def find_vtb_zip_for_xml(
