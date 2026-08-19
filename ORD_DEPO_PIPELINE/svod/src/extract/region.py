@@ -208,6 +208,14 @@ def iter_region_rows(
                 vrsn_lkk_all.extend(parsed)
             continue
 
+        if path.suffix.lower() in (".xls", ".xlsx") and not is_format2_path(path):
+            parsed = parse_vrsn_lkk_xlsx(path)
+            if not parsed:
+                parsed = parse_format2_vl_xls(path)
+            if parsed:
+                vrsn_lkk_all.extend(parsed)
+                continue
+
         parsed = _parse_region_file(path)
         if not parsed:
             if path.suffix.lower() == ".xml":

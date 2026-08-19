@@ -4,7 +4,7 @@
 с запуском в Docker и триггером по письму:
 
 - `Ord <YYYY_MM>` → Ord_Quantity
-- `Svod <YYYY_MM>` → СВОД_поДЕПО (код в `svod/`, данные в `{period}/SVOD/`)
+- `Svod <YYYY_MM>` → СВОД_поДЕПО (код в `svod/`, данные в `{period}/_SVOD/`)
 
 Требуется **Python 3.8+** (образ Docker — `python:3.8-slim`).
 
@@ -18,8 +18,8 @@ python scripts/run_svod_pipeline.py --period 2026_05
 ```
 
 Для Ord нужна книга-основа `{period}/{period}_Ord_Quantity.xlsx`.
-Для Svod — входы в `{period}/SVOD/` (перед сборкой копируются `GPB/R`, `RSD/R`,
-`RSD/REP`; подробности в [`svod/README.md`](svod/README.md)).
+Для Svod — входы в `{period}/_SVOD/` (перед сборкой копируются `GPB/R`, `RSD/R`,
+`RSD/REP` и выгружается REGION по API ЛК; подробности в [`svod/README.md`](svod/README.md)).
 
 ## Почта
 

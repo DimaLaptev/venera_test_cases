@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--skip-prepare",
         action="store_true",
-        help="Не копировать GPB/R, RSD/R, RSD/REP",
+        help="Не копировать GPB/R, RSD/R, RSD/REP и не выгружать REGION по API",
     )
     args = parser.parse_args(argv)
     cfg = load_config(args.pipeline_root)
@@ -31,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         cfg.reports_root,
         period=args.period,
         skip_prepare=args.skip_prepare,
+        region_lk=cfg.region_lk,
     )
     if result.stdout:
         print(result.stdout, flush=True)

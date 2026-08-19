@@ -387,8 +387,9 @@ def _find_vrsn_lkk_header_row(sheet_rows: list[list[str]]) -> tuple[int, dict[st
     for r in range(1, min(20, len(sheet_rows) + 1)):
         cmap = _header_col_map(sheet_rows, r)
         keys = set(cmap.keys())
-        if "статус" in keys and ("номер гри" in keys or "нгри" in keys):
-            return r, cmap
+        if "статус" in keys or "состояние" in keys or "status" in keys:
+            if "номер гри" in keys or "нгри" in keys:
+                return r, cmap
     return None
 
 

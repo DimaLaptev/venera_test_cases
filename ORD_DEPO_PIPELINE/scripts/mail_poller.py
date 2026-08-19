@@ -125,6 +125,7 @@ def process_once(cfg: AppConfig, seen_jobs: set[str]) -> int:
                     cfg.pipeline_root,
                     cfg.reports_root,
                     period=period,
+                    region_lk=cfg.region_lk,
                 )
             else:
                 result = run_ord_period(

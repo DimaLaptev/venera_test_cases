@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from period_paths import parse_period_year_month
+from period_utils import SVOD_DIR_NAME
 from runner import RunResult, resolve_period
 from svod_prepare import prepare_svod_inputs
 
@@ -25,6 +26,7 @@ def run_svod_period(
     period: str | None = None,
     period_dir: Path | None = None,
     skip_prepare: bool = False,
+    region_lk=None,
 ) -> RunResult:
     try:
         abs_period, name = resolve_period(
@@ -64,13 +66,13 @@ def run_svod_period(
             ),
         )
 
-    svod_dir = abs_period / "SVOD"
+    svod_dir = abs_period / SVOD_DIR_NAME
     workbook = svod_dir / "СВОД_поДЕПО.xlsx"
     prepare_log = ""
 
     if not skip_prepare:
         try:
-            prep = prepare_svod_inputs(reports_root, name)
+            prep = prepare_svod_inputs(reports_root, name, region_lk=region_lk)
             prepare_log = "\n".join(prep.messages)
         except Exception as exc:
             return RunResult(

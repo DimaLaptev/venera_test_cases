@@ -413,3 +413,45 @@ def test_iter_region_merges_vrsn_lkk_status(tmp_path: Path) -> None:
     rows = iter_region_rows(reg)
     assert len(rows) == 1
     assert rows[0].status == "В хранилище"
+
+
+def test_iter_region_merges_export_xlsx_status(tmp_path: Path) -> None:
+    reg = tmp_path / "REGION"
+    reg.mkdir(parents=True)
+
+    header = ["Состояние", "НГРИ"]
+    data = ["На хранении", "77:01:000111:1-77/001/2020-1"]
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    for r, row in enumerate([header, data], start=1):
+        for c, val in enumerate(row, start=1):
+            ws.cell(row=r, column=c, value=val)
+    wb.save(reg / "export-66.xlsx")
+    wb.close()
+
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<DEPOACCOUNT_BALANCE_REPORT>
+  <ReportHeader><DepoAccount><DepoAccount>VL0160</DepoAccount></DepoAccount></ReportHeader>
+  <ReportBody>
+    <PositionList>
+      <Position>
+        <PositionInfo><Mortgage>
+          <RegistrationNumber>77:01:000111:1-77/001/2020-1</RegistrationNumber>
+          <AgreementNumber>KD-1</AgreementNumber>
+        </Mortgage></PositionInfo>
+        <DivisionList><Division><DivisionInfo>
+          <DivisionName>4B02-60-00307-R-001P</DivisionName>
+        </DivisionInfo></Division></DivisionList>
+      </Position>
+    </PositionList>
+  </ReportBody>
+</DEPOACCOUNT_BALANCE_REPORT>"""
+    (reg / "[VL0160][][IS26050516750][][31.03.2026].xml").write_text(xml, encoding="utf-8")
+
+    rows = iter_region_rows(reg)
+    assert len(rows) == 1
+    assert rows[0].status == "На хранении"
+    assert rows[0].source_file.endswith(".xml")

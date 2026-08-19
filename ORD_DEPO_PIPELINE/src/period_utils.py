@@ -10,6 +10,9 @@ from pathlib import Path
 
 _PERIOD_RE = re.compile(r"^(\d{4})_(\d{1,2})$")
 
+# Каталог данных СВОД внутри периода: {reports}/{period}/_SVOD
+SVOD_DIR_NAME = "_SVOD"
+
 
 @dataclass(frozen=True)
 class SvodPeriodPaths:
@@ -90,8 +93,8 @@ def resolve_svod_period_paths(reports_root: Path, period_name: str) -> SvodPerio
     prev = previous_period_name(period_name)
     period_dir = (reports_root / period_name).resolve()
     prev_dir = (reports_root / prev).resolve()
-    svod_dir = period_dir / "SVOD"
-    prev_svod = prev_dir / "SVOD"
+    svod_dir = period_dir / SVOD_DIR_NAME
+    prev_svod = prev_dir / SVOD_DIR_NAME
     return SvodPeriodPaths(
         period_name=period_name,
         prev_period_name=prev,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -54,6 +55,21 @@ def _env_int(name: str, default: int) -> int:
     return int(raw.strip())
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return float(raw.strip())
+
+
+def _proxies_from_env() -> Optional[dict[str, str]]:
+    """Словарь proxies для requests.Session из REGION_PROXY_URL (http/https)."""
+    url = (os.getenv("REGION_PROXY_URL") or "").strip()
+    if not url:
+        return None
+    return {"http": url, "https": url}
+
+
 @dataclass(frozen=True)
 class MailConfig:
     server: str
@@ -68,10 +84,25 @@ class MailConfig:
 
 
 @dataclass(frozen=True)
+class RegionLkSettings:
+    """Учётные данные ЛК Region (CASD) из .env. Не импортирует src/region_lk."""
+
+    base_url: str
+    email: str
+    password: str
+    timeout: float = 30.0
+    ssl_verify: bool = True
+    proxies: Optional[dict[str, str]] = None
+    poll_interval: float = 2.0
+    wait_timeout: float = 120.0
+
+
+@dataclass(frozen=True)
 class AppConfig:
     pipeline_root: Path
     reports_root: Path
     mail: MailConfig
+    region_lk: RegionLkSettings
 
     @property
     def sprav_workbook(self) -> Path:
@@ -136,7 +167,22 @@ def load_config(pipeline_root: Path | None = None) -> AppConfig:
         imap_port=_env_int("MAIL_IMAP_PORT", 993),
         smtp_port=_env_int("MAIL_SMTP_PORT", 587),
     )
-    return AppConfig(pipeline_root=root, reports_root=reports_root, mail=mail)
+    region_lk = RegionLkSettings(
+        base_url=(os.environ.get("REGION_LK_BASE_URL", "").strip() or "https://lk-test.region-dk.ru").rstrip("/"),
+        email=os.environ.get("REGION_LK_EMAIL", "").strip(),
+        password=os.environ.get("REGION_LK_PASSWORD", ""),
+        timeout=_env_float("REGION_LK_TIMEOUT", 30.0),
+        ssl_verify=_env_bool("REGION_LK_SSL_VERIFY", True),
+        proxies=_proxies_from_env(),
+        poll_interval=_env_float("REGION_LK_POLL_INTERVAL", 2.0),
+        wait_timeout=_env_float("REGION_LK_WAIT_TIMEOUT", 120.0),
+    )
+    return AppConfig(
+        pipeline_root=root,
+        reports_root=reports_root,
+        mail=mail,
+        region_lk=region_lk,
+    )
 
 
 def load_svod_config(pipeline_root: Path) -> SvodPipelinePaths:
@@ -178,7 +224,7 @@ def load_svod_period_config(
     *,
     report_date: str | None = None,
 ) -> SvodPipelinePaths:
-    """Пути для периода: {reports}/{period}/SVOD/… + depo_validation/Справочник.xlsx."""
+    """Пути для периода: {reports}/{period}/_SVOD/… + depo_validation/Справочник.xlsx."""
     # period_utils лежит в ORD src — вызывающий код должен иметь его в sys.path
     from period_utils import report_date_for_period, resolve_svod_period_paths
 

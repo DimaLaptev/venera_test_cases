@@ -176,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
         "--period",
         type=str,
         default=None,
-        help="Период YYYY_MM (пути под {reports}/{period}/SVOD)",
+        help="Период YYYY_MM (пути под {reports}/{period}/_SVOD)",
     )
     parser.add_argument("--report-date", type=str, default=None)
     parser.add_argument("--output", type=Path, default=None)
