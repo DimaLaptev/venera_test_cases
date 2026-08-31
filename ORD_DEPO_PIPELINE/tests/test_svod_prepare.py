@@ -120,3 +120,34 @@ def test_prepare_svod_inputs(tmp_path: Path, monkeypatch) -> None:
     assert (svod / "RSD_EXL" / "nested" / "a.xlsx").is_file()
     assert (svod / "REGION" / "export-66.xlsx").is_file()
     assert any("REGION=1" in msg for msg in result.messages)
+
+
+def test_prepare_svod_inputs_skip_region_download(tmp_path: Path, monkeypatch) -> None:
+    period = "2026_06"
+    period_dir = tmp_path / period
+    gpb_r = period_dir / "GPB" / "R"
+    rsd_r = period_dir / "RSD" / "R"
+    rsd_rep = period_dir / "RSD" / "REP"
+    region = period_dir / SVOD_DIR_NAME / "REGION"
+    for d in (gpb_r, rsd_r, rsd_rep, region):
+        d.mkdir(parents=True)
+    (gpb_r / "R_102_20260630_001.MSG").write_text("gpb-ok", encoding="utf-8")
+    (rsd_r / "R_260630_abc.MSG").write_text("rsd-ok", encoding="utf-8")
+    (rsd_rep / "file.zip").write_text("zip", encoding="utf-8")
+    existing = region / "export-66.xlsx"
+    existing.write_bytes(b"keep")
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("API REGION не должен вызываться")
+
+    monkeypatch.setattr("svod_prepare.download_region_mortgage_exports", boom)
+
+    result = prepare_svod_inputs(
+        tmp_path, period, region_lk=_dummy_lk(), skip_region_download=True
+    )
+    assert result.gpb_copied == 1
+    assert result.rsd_msg_copied == 1
+    assert result.rsd_exl_copied == 1
+    assert result.region_downloaded == 0
+    assert existing.read_bytes() == b"keep"
+    assert any("пропуск API" in msg for msg in result.messages)

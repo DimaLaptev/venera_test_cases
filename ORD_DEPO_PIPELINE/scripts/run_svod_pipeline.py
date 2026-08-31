@@ -24,6 +24,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Не копировать GPB/R, RSD/R, RSD/REP и не выгружать REGION по API",
     )
+    parser.add_argument(
+        "--region-from-dir",
+        action="store_true",
+        help="Не скачивать REGION по API, взять файлы из _SVOD/REGION (как тема «dir»)",
+    )
     args = parser.parse_args(argv)
     cfg = load_config(args.pipeline_root)
     result = run_svod_period(
@@ -32,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         period=args.period,
         skip_prepare=args.skip_prepare,
         region_lk=cfg.region_lk,
+        skip_region_download=args.region_from_dir,
     )
     if result.stdout:
         print(result.stdout, flush=True)

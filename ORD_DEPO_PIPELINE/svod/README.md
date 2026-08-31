@@ -9,11 +9,15 @@
 # prepare (GPB/R, RSD/R, RSD/REP, REGION по API) + сборка
 python scripts/run_svod_pipeline.py --period 2026_05
 
+# prepare без API REGION (файлы уже в _SVOD/REGION)
+python scripts/run_svod_pipeline.py --period 2026_05 --region-from-dir
+
 # или только сборка (файлы уже в _SVOD/)
 python scripts/run_svod_pipeline.py --period 2026_05 --skip-prepare
 ```
 
-Тема письма: `Svod <2026_05>` (см. `scripts/mail_poller.py`).
+Тема письма: `Svod <2026_05>` (REGION по API) или `Svod <2026_05> dir`
+(файлы из `_SVOD/REGION`, без API; см. `scripts/mail_poller.py`).
 
 ## Пути
 
@@ -28,7 +32,8 @@ python scripts/run_svod_pipeline.py --period 2026_05 --skip-prepare
 - `{period}/GPB/R` → `_SVOD/GPB` (имя содержит последнюю дату месяца)
 - `{period}/RSD/R` → `_SVOD/RSD_MSG` (то же)
 - `{period}/RSD/REP` → `_SVOD/RSD_EXL` (всё содержимое)
-- CASD API ЛК Region (`REGION_LK_*` в `.env`) → `_SVOD/REGION` (Excel для колонки «Состояние»)
+- CASD API ЛК Region (`REGION_LK_*` в `.env`) → `_SVOD/REGION` (Excel для колонки «Состояние»);
+  тема `Svod <YYYY_MM> dir` / флаг `--region-from-dir` — API не вызывается, берутся уже лежащие файлы
 
 ## Документация
 

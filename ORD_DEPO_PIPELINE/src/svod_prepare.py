@@ -74,12 +74,14 @@ def prepare_svod_inputs(
     period_name: str,
     *,
     region_lk: Any = None,
+    skip_region_download: bool = False,
 ) -> PrepareResult:
     """
     GPB/R → _SVOD/GPB (фильтр даты),
     RSD/R → _SVOD/RSD_MSG (фильтр даты),
     RSD/REP → _SVOD/RSD_EXL (всё содержимое),
-    CASD API → _SVOD/REGION (Excel для колонки «Состояние»).
+    CASD API → _SVOD/REGION (Excel для колонки «Состояние»),
+    либо skip_region_download: оставить файлы уже лежащие в _SVOD/REGION.
     """
     paths = resolve_svod_period_paths(reports_root, period_name)
     if not paths.period_dir.is_dir():
@@ -103,13 +105,19 @@ def prepare_svod_inputs(
     )
     all_msgs.extend(rsd_exl_msgs)
 
-    if region_lk is None:
-        from config import load_config
+    if skip_region_download:
+        region_n = 0
+        all_msgs.append(
+            f"  REGION: пропуск API, используем файлы в {paths.region}"
+        )
+    else:
+        if region_lk is None:
+            from config import load_config
 
-        region_lk = load_config().region_lk
-    _ensure_dir(paths.region)
-    region_n, region_msgs = download_region_mortgage_exports(paths.region, region_lk)
-    all_msgs.extend(region_msgs)
+            region_lk = load_config().region_lk
+        _ensure_dir(paths.region)
+        region_n, region_msgs = download_region_mortgage_exports(paths.region, region_lk)
+        all_msgs.extend(region_msgs)
 
     all_msgs.insert(
         0,

@@ -80,7 +80,7 @@ def process_once(cfg: AppConfig, last_started: dict[str, float]) -> int:
 
     # Сначала fetch + mark_seen, затем долгая сборка — иначе IMAP-сессия
     # обрывается сервером и письмо остаётся UNSEEN (повторный запуск).
-    jobs: list[tuple[IncomingMail, str, str]] = []  # mail, kind, period
+    jobs: list[tuple[IncomingMail, str, str, bool]] = []  # mail, kind, period, skip_region_dl
     with ImapClient(
         host=cfg.mail.server,
         username=cfg.mail.username,
@@ -90,16 +90,20 @@ def process_once(cfg: AppConfig, last_started: dict[str, float]) -> int:
         unseen = imap.fetch_unseen()
         seen_uids: list[str] = []
         for mail in unseen:
-            svod_period = parse_svod_subject(mail.subject)
-            ord_period = parse_ord_subject(mail.subject) if svod_period is None else None
-            if svod_period is not None:
-                kind, period = "svod", svod_period
+            svod = parse_svod_subject(mail.subject)
+            ord_period = parse_ord_subject(mail.subject) if svod is None else None
+            skip_region_dl = False
+            if svod is not None:
+                kind, period = "svod", svod.period
+                skip_region_dl = svod.region_from_dir
             elif ord_period is not None:
                 kind, period = "ord", ord_period
             else:
                 continue
             seen_uids.append(mail.uid)
             job_key = f"{kind}:{period}"
+            if skip_region_dl:
+                job_key = f"{job_key}:dir"
             left = remaining_cooldown_sec(last_started, job_key)
             if left is not None:
                 left_min = max(1, int((left + 59) // 60))
@@ -113,12 +117,12 @@ def process_once(cfg: AppConfig, last_started: dict[str, float]) -> int:
                 f"Письмо UID={mail.uid} тема={mail.subject!r} → {job_key}",
                 flush=True,
             )
-            jobs.append((mail, kind, period))
+            jobs.append((mail, kind, period, skip_region_dl))
             record_job_start(last_started, job_key)
         if seen_uids:
             imap.mark_seen(seen_uids)
 
-    for mail, kind, period in jobs:
+    for mail, kind, period, skip_region_dl in jobs:
         processed += 1
         report_label = "СВОД_поДЕПО" if kind == "svod" else "Ord_Quantity"
         subject_prefix = "Svod" if kind == "svod" else "Ord"
@@ -129,6 +133,7 @@ def process_once(cfg: AppConfig, last_started: dict[str, float]) -> int:
                     cfg.reports_root,
                     period=period,
                     region_lk=cfg.region_lk,
+                    skip_region_download=skip_region_dl,
                 )
             else:
                 result = run_ord_period(

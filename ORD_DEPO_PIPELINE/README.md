@@ -4,7 +4,8 @@
 с запуском в Docker и триггером по письму:
 
 - `Ord <YYYY_MM>` → Ord_Quantity
-- `Svod <YYYY_MM>` → СВОД_поДЕПО (код в `svod/`, данные в `{period}/_SVOD/`)
+- `Svod <YYYY_MM>` → СВОД_поДЕПО (REGION выгружается по API)
+- `Svod <YYYY_MM> dir` → СВОД_поДЕПО, файлы `_SVOD/REGION` без скачивания по API
 
 Требуется **Python 3.8+** (образ Docker — `python:3.8-slim`).
 
@@ -25,7 +26,8 @@ python scripts/run_svod_pipeline.py --period 2026_05
 
 Сервис `scripts/mail_poller.py` раз в минуту (или `MAIL_POLL_INTERVAL_SEC`)
 опрашивает IMAP (`MAIL_SERVER_NAME` + `MAIL_1_*`). Темы `Ord <…>` / `Svod <…>`
-запускают соответствующую сборку под `REPORTS_DEPO_DIRECTORY`.
+(для СВОД опционально `dir` — не качать REGION по API) запускают сборку
+под `REPORTS_DEPO_DIRECTORY`.
 При ошибке отправителю уходит SMTP-отбивка.
 
 Для smoke без сети: `MAIL_MOCK=1`.

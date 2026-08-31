@@ -9,7 +9,7 @@ PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIPELINE_ROOT / "src"))
 sys.path.insert(0, str(PIPELINE_ROOT))
 
-from mail.subject import parse_ord_subject, parse_svod_subject
+from mail.subject import SvodSubject, parse_ord_subject, parse_svod_subject
 
 
 def test_parse_ord_subject_ok() -> None:
@@ -32,19 +32,32 @@ def test_parse_ord_subject_reject() -> None:
 
 
 def test_parse_svod_subject_ok() -> None:
-    assert parse_svod_subject("Svod <2026_05>") == "2026_05"
-    assert parse_svod_subject("svod <2026_1>") == "2026_1"
-    assert parse_svod_subject("  SVOD <2026_01>  ") == "2026_01"
+    assert parse_svod_subject("Svod <2026_05>") == SvodSubject("2026_05")
+    assert parse_svod_subject("svod <2026_1>") == SvodSubject("2026_1")
+    assert parse_svod_subject("  SVOD <2026_01>  ") == SvodSubject("2026_01")
+
+
+def test_parse_svod_subject_dir() -> None:
+    assert parse_svod_subject("svod <2026_05> dir") == SvodSubject(
+        "2026_05", region_from_dir=True
+    )
+    assert parse_svod_subject("Svod <2026_05> DIR") == SvodSubject(
+        "2026_05", region_from_dir=True
+    )
+    assert parse_svod_subject("Re: Svod <2026_05> dir") == SvodSubject(
+        "2026_05", region_from_dir=True
+    )
 
 
 def test_parse_svod_subject_with_reply_prefix() -> None:
-    assert parse_svod_subject("Re: Svod <2026_05>") == "2026_05"
-    assert parse_svod_subject("Fwd: Svod <2026_05>") == "2026_05"
+    assert parse_svod_subject("Re: Svod <2026_05>") == SvodSubject("2026_05")
+    assert parse_svod_subject("Fwd: Svod <2026_05>") == SvodSubject("2026_05")
 
 
 def test_parse_svod_subject_reject() -> None:
     assert parse_svod_subject("Hello") is None
     assert parse_svod_subject("Svod 2026_05") is None
     assert parse_svod_subject("Ord <2026_05>") is None
+    assert parse_svod_subject("Svod <2026_05> foo") is None
     assert parse_svod_subject("") is None
     assert parse_svod_subject(None) is None

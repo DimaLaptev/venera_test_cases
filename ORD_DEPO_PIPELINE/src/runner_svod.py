@@ -27,6 +27,7 @@ def run_svod_period(
     period_dir: Path | None = None,
     skip_prepare: bool = False,
     region_lk=None,
+    skip_region_download: bool = False,
 ) -> RunResult:
     try:
         abs_period, name = resolve_period(
@@ -72,7 +73,12 @@ def run_svod_period(
 
     if not skip_prepare:
         try:
-            prep = prepare_svod_inputs(reports_root, name, region_lk=region_lk)
+            prep = prepare_svod_inputs(
+                reports_root,
+                name,
+                region_lk=region_lk,
+                skip_region_download=skip_region_download,
+            )
             prepare_log = "\n".join(prep.messages)
         except Exception as exc:
             return RunResult(
