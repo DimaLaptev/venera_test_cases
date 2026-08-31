@@ -15,6 +15,7 @@ sys.path.insert(0, str(PIPELINE_ROOT))
 
 from config import AppConfig, load_config  # noqa: E402
 from mail.imap_client import ImapClient, IncomingMail  # noqa: E402
+from mail.job_cooldown import remaining_cooldown_sec, record_job_start  # noqa: E402
 from mail.smtp_client import SmtpClient  # noqa: E402
 from mail.subject import parse_ord_subject, parse_svod_subject  # noqa: E402
 from runner import run_ord_period  # noqa: E402
@@ -56,7 +57,7 @@ def _send_error(
     )
 
 
-def process_once(cfg: AppConfig, seen_jobs: set[str]) -> int:
+def process_once(cfg: AppConfig, last_started: dict[str, float]) -> int:
     """Один цикл опроса. Возвращает число запущенных сборок."""
     smtp = _smtp_from_config(cfg)
     processed = 0
@@ -99,10 +100,12 @@ def process_once(cfg: AppConfig, seen_jobs: set[str]) -> int:
                 continue
             seen_uids.append(mail.uid)
             job_key = f"{kind}:{period}"
-            if job_key in seen_jobs:
+            left = remaining_cooldown_sec(last_started, job_key)
+            if left is not None:
+                left_min = max(1, int((left + 59) // 60))
                 print(
                     f"Письмо UID={mail.uid} тема={mail.subject!r} → {job_key} "
-                    f"уже обработан, пропуск сборки",
+                    f"уже обработан (осталось {left_min} мин), пропуск сборки",
                     flush=True,
                 )
                 continue
@@ -111,7 +114,7 @@ def process_once(cfg: AppConfig, seen_jobs: set[str]) -> int:
                 flush=True,
             )
             jobs.append((mail, kind, period))
-            seen_jobs.add(job_key)
+            record_job_start(last_started, job_key)
         if seen_uids:
             imap.mark_seen(seen_uids)
 
@@ -167,10 +170,10 @@ def run_loop(cfg: AppConfig, *, once: bool = False) -> int:
         f"reports_root={cfg.reports_root} mock={cfg.mail.mock}",
         flush=True,
     )
-    seen_jobs: set[str] = set()
+    last_started: dict[str, float] = {}
     while True:
         try:
-            n = process_once(cfg, seen_jobs)
+            n = process_once(cfg, last_started)
             if n:
                 print(f"Запущено сборок: {n}", flush=True)
         except Exception:
