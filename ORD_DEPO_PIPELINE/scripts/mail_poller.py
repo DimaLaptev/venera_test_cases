@@ -18,7 +18,7 @@ from mail.imap_client import ImapClient, IncomingMail  # noqa: E402
 from mail.job_cooldown import remaining_cooldown_sec, record_job_start  # noqa: E402
 from mail.smtp_client import SmtpClient  # noqa: E402
 from mail.subject import parse_ord_subject, parse_svod_subject  # noqa: E402
-from runner import run_ord_period  # noqa: E402
+from runner import format_failure_email_text, run_ord_period  # noqa: E402
 from runner_svod import run_svod_period  # noqa: E402
 
 
@@ -141,18 +141,19 @@ def process_once(cfg: AppConfig, last_started: dict[str, float]) -> int:
                     cfg.reports_root,
                     period=period,
                 )
-            if result.stdout:
-                print(result.stdout, flush=True)
             if result.ok:
+                if result.stdout:
+                    print(result.stdout, flush=True)
                 print(result.message, flush=True)
             else:
-                print(result.message, file=sys.stderr, flush=True)
+                error_text = format_failure_email_text(result)
+                print(error_text, file=sys.stderr, flush=True)
                 _send_error(
                     smtp,
                     cfg,
                     mail,
                     period=period,
-                    error_text=result.message,
+                    error_text=error_text,
                     report_label=report_label,
                     subject_prefix=subject_prefix,
                 )

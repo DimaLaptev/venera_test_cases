@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,13 +82,17 @@ def run_svod_period(
             )
             prepare_log = "\n".join(prep.messages)
         except Exception as exc:
+            tb = traceback.format_exc()
             return RunResult(
                 ok=False,
                 period_name=name,
                 period_dir=abs_period,
                 workbook=workbook,
                 exit_code=2,
-                message=f"Ошибка подготовки файлов SVOD для {name}: {exc}",
+                message=(
+                    f"Ошибка подготовки файлов SVOD для {name}: {exc}\n\n"
+                    f"--- traceback ---\n{tb}"
+                ),
             )
 
     script = pipeline_root / "svod" / "scripts" / "run_pipeline.py"
@@ -134,6 +139,6 @@ def run_svod_period(
         workbook=workbook,
         exit_code=proc.returncode,
         message=f"Ошибка сборки СВОД_поДЕПО для {name}: {detail}",
-        stdout=proc.stdout or "",
+        stdout=combined_out,
         stderr=proc.stderr or "",
     )

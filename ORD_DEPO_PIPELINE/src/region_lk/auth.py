@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from region_lk.client import CasdAuthError, CasdClient
+from region_lk.client import CasdAuthError, CasdClient, format_casd_http_error
 
 
 def extract_authenticate_token(headers: dict[str, str] | object) -> str | None:
@@ -48,7 +48,14 @@ def login(client: CasdClient, email: str | None = None, password: str | None = N
     )
     if response.status_code != 200:
         raise CasdAuthError(
-            f"Авторизация не удалась: HTTP {response.status_code} {response.text[:300]}"
+            "Авторизация не удалась.\n"
+            + format_casd_http_error(
+                response,
+                base_url=client.config.base_url,
+                email=email,
+                user_id=None,
+                token_len=0,
+            )
         )
 
     token = extract_authenticate_token(response.headers)

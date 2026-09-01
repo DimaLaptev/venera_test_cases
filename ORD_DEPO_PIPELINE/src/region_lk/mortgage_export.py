@@ -72,6 +72,10 @@ def is_export_ready(
     return False
 
 
+def _raise_http(client: CasdClient, response: Any, prefix: str) -> None:
+    raise CasdClientError(prefix + "\n" + client.format_error(response))
+
+
 def start_mortgage_export(
     client: CasdClient,
     account_id: int,
@@ -87,8 +91,10 @@ def start_mortgage_export(
         json=payload,
     )
     if response.status_code not in (200, 201, 202, 204):
-        raise CasdClientError(
-            f"Старт экспорта не удался: HTTP {response.status_code} {response.text[:300]}"
+        _raise_http(
+            client,
+            response,
+            f"Старт экспорта не удался. account_id={account_id} section_id={section_id}.",
         )
     if response.status_code == 204 or not (response.text or "").strip():
         return None
@@ -108,8 +114,10 @@ def get_mortgage_export_status(
     if response.status_code == 204:
         return None
     if response.status_code != 200:
-        raise CasdClientError(
-            f"Статус экспорта: HTTP {response.status_code} {response.text[:300]}"
+        _raise_http(
+            client,
+            response,
+            f"Ошибка статуса экспорта. account_id={account_id} section_id={section_id}.",
         )
     return parse_export_status(response.json())
 
@@ -144,8 +152,10 @@ def download_mortgage_export_bytes(
     """GET .../Export/Mortgages/Data/... → JSON Value (Base64) → bytes."""
     response = client.request("GET", export_data_path(account_id, section_id))
     if response.status_code != 200:
-        raise CasdClientError(
-            f"Скачивание Data: HTTP {response.status_code} {response.text[:300]}"
+        _raise_http(
+            client,
+            response,
+            f"Ошибка скачивания Data экспорта. account_id={account_id} section_id={section_id}.",
         )
     payload = response.json()
     value = payload.get("Value")
@@ -164,8 +174,10 @@ def delete_mortgage_export(
     """DELETE статус/файл экспорта (как после клика в UI)."""
     response = client.request("DELETE", export_path(account_id, section_id))
     if response.status_code not in (200, 204):
-        raise CasdClientError(
-            f"Удаление экспорта: HTTP {response.status_code} {response.text[:300]}"
+        _raise_http(
+            client,
+            response,
+            f"Ошибка удаления экспорта. account_id={account_id} section_id={section_id}.",
         )
 
 

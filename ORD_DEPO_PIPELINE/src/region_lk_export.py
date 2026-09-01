@@ -62,7 +62,16 @@ def download_region_mortgage_exports(
             raise CasdClientError(
                 "Не удалось взять userId из логина ЛК Region."
             )
-        _accounts, pairs = discover_account_sections(client, user_id)
+        try:
+            _accounts, pairs = discover_account_sections(client, user_id)
+        except (CasdAuthError, CasdClientError) as exc:
+            raise CasdClientError(
+                "REGION API: не удалось получить счета/разделы.\n"
+                f"base_url={config.base_url}\n"
+                f"login_email={email}\n"
+                f"user_id={user_id}\n\n"
+                f"{exc}"
+            ) from exc
         print(
             f"REGION API: userId={user_id}, пар Account/Section={len(pairs)}",
             flush=True,
@@ -91,13 +100,16 @@ def download_region_mortgage_exports(
                 print(line, flush=True)
                 msgs.append(line)
             except (CasdClientError, CasdAuthError, OSError, ValueError) as exc:
-                err_line = f"account={account.id} section={section.id}: {exc}"
+                err_line = (
+                    f"account_id={account.id} account_number={account.number!r} "
+                    f"section_id={section.id} section_number={section.number!r}:\n{exc}"
+                )
                 print(f"REGION API ERROR: {err_line}", flush=True)
                 errors.append(err_line)
         if errors:
-            detail = "; ".join(errors)
+            detail = "\n\n".join(errors)
             raise CasdClientError(
-                f"Ошибка выгрузки REGION (saved={saved}): {detail}"
+                f"Ошибка выгрузки REGION (saved={saved}, errors={len(errors)}):\n\n{detail}"
             )
         print(f"REGION API: готово, файлов={saved}", flush=True)
         return saved, msgs

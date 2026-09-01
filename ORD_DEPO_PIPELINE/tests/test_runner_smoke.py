@@ -57,3 +57,36 @@ def test_smtp_mock_writes_file(tmp_path: Path) -> None:
     text = out.read_text(encoding="utf-8")
     assert "to@example.com" in text
     assert "boom" in text
+
+
+def test_smtp_mock_keeps_full_api_error_body(tmp_path: Path) -> None:
+    long_error = (
+        "Ошибка выгрузки REGION (saved=0, errors=1):\n\n"
+        "account_id=42 account_number='VL0089' section_id=85 section_number='01':\n"
+        "HTTP 403 Forbidden\n"
+        "url: https://lk.region-dk.ru/API/CASD/Export/Mortgages/Accounts/42/Sections/85\n"
+        "response_body:\n"
+        + ("Нет доступа. " * 40)
+    )
+    client = SmtpClient(
+        host="localhost",
+        username="u",
+        password="p",
+        from_addr="from@example.com",
+        mock=True,
+        mock_dir=tmp_path,
+    )
+    out = client.send_error_reply(
+        to_addr="to@example.com",
+        period="2026_05",
+        error_text=long_error,
+        original_subject="Svod <2026_05>",
+        report_label="СВОД_поДЕПО",
+        subject_prefix="Svod",
+    )
+    assert out is not None
+    text = out.read_text(encoding="utf-8")
+    assert "VL0089" in text
+    assert "Accounts/42/Sections/85" in text
+    assert long_error in text
+    assert "Нет доступа." in text

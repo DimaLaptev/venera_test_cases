@@ -22,6 +22,18 @@ class RunResult:
     stderr: str = ""
 
 
+def format_failure_email_text(result: RunResult) -> str:
+    """Полный текст ошибки для SMTP: message + stdout + stderr."""
+    parts = [result.message.strip()]
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
+    if stdout and stdout not in result.message:
+        parts.append("--- stdout ---\n" + stdout)
+    if stderr and stderr not in result.message and stderr != stdout:
+        parts.append("--- stderr ---\n" + stderr)
+    return "\n\n".join(parts)
+
+
 def resolve_period(
     reports_root: Path,
     *,

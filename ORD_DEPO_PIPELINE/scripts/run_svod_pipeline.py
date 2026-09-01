@@ -12,6 +12,7 @@ sys.path.insert(0, str(PIPELINE_ROOT / "src"))
 sys.path.insert(0, str(PIPELINE_ROOT))
 
 from config import load_config
+from runner import format_failure_email_text
 from runner_svod import run_svod_period
 
 
@@ -39,12 +40,12 @@ def main(argv: list[str] | None = None) -> int:
         region_lk=cfg.region_lk,
         skip_region_download=args.region_from_dir,
     )
-    if result.stdout:
-        print(result.stdout, flush=True)
     if result.ok:
+        if result.stdout:
+            print(result.stdout, flush=True)
         print(result.message, flush=True)
         return 0
-    print(result.message, file=sys.stderr, flush=True)
+    print(format_failure_email_text(result), file=sys.stderr, flush=True)
     return result.exit_code or 1
 
 

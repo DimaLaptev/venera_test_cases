@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from region_lk.client import CasdClient, CasdClientError
+from region_lk.client import CasdAuthError, CasdClient, CasdClientError
 
 
 @dataclass(frozen=True)
@@ -49,8 +49,8 @@ def fetch_user_accounts(client: CasdClient, user_id: int) -> list[AccountRef]:
     response = client.request("GET", f"/API/CASD/Users/{user_id}/Accounts")
     if response.status_code != 200:
         raise CasdClientError(
-            f"Не удалось получить счета userId={user_id}: "
-            f"HTTP {response.status_code} {response.text[:300]}"
+            f"Не удалось получить счета user_id={user_id}.\n"
+            + client.format_error(response)
         )
     accounts: list[AccountRef] = []
     for item in _as_items(response.json()):
@@ -87,8 +87,8 @@ def fetch_account_sections(
     )
     if response.status_code != 200:
         raise CasdClientError(
-            f"Не удалось получить разделы accountId={account_id}: "
-            f"HTTP {response.status_code} {response.text[:300]}"
+            f"Не удалось получить разделы account_id={account_id}.\n"
+            + client.format_error(response)
         )
     sections: list[SectionRef] = []
     for item in _as_items(response.json()):
@@ -130,10 +130,20 @@ def discover_account_sections(
 
     pairs: list[tuple[AccountRef, SectionRef]] = []
     for account in accounts:
-        for section in fetch_account_sections(
-            client,
-            account.id,
-            security_type_id=security_type_id,
-        ):
+        try:
+            sections = fetch_account_sections(
+                client,
+                account.id,
+                security_type_id=security_type_id,
+            )
+        except (CasdAuthError, CasdClientError) as exc:
+            raise CasdClientError(
+                "Не удалось получить разделы счёта CASD.\n"
+                f"account_id={account.id}\n"
+                f"account_number={account.number!r}\n"
+                f"account_name={account.name!r}\n\n"
+                f"{exc}"
+            ) from exc
+        for section in sections:
             pairs.append((account, section))
     return accounts, pairs
