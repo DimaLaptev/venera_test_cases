@@ -141,6 +141,8 @@ def process_once(cfg: AppConfig, last_started: dict[str, float]) -> int:
                     cfg.reports_root,
                     period=period,
                 )
+            if result.stdout:
+                print(result.stdout, flush=True)
             if result.ok:
                 print(result.message, flush=True)
             else:
