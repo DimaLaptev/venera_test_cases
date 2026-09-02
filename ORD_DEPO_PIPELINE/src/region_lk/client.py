@@ -11,6 +11,7 @@ import urllib3
 from region_lk.config import RegionLkConfig
 
 _MAX_ERROR_BODY = 8000
+_RE_ORG_ACCOUNTS = re.compile(r"/Organizations/(\d+)/AccountsSections", re.I)
 _RE_USER_ACCOUNTS = re.compile(r"/Users/(\d+)/Accounts", re.I)
 _RE_ACCOUNT_ID = re.compile(r"/Accounts?/(\d+)", re.I)
 _RE_SECTION_ID = re.compile(r"/Sections/(\d+)", re.I)
@@ -53,7 +54,13 @@ def format_casd_http_error(
     note_parts: list[str] = []
     low = f"{path} {url}".lower()
     combined = f"{path} {url}"
-    if "/users/" in low and "/accounts" in low:
+    if "accountssections" in low:
+        note_parts.append(
+            "Шаг: список счетов и разделов организации "
+            "(Users/Current/Organizations/{id}/AccountsSections). "
+            "Это ещё не экспорт конкретного счёта ДЕПО (VL…)."
+        )
+    elif "/users/" in low and "/accounts" in low:
         note_parts.append(
             "Шаг: список счетов CASD пользователя ЛК. "
             "Это ещё не экспорт конкретного счёта ДЕПО (VL…) — "
@@ -63,11 +70,14 @@ def format_casd_http_error(
         note_parts.append("Шаг: экспорт закладных раздела (Excel).")
     elif "/sections" in low:
         note_parts.append("Шаг: список разделов счёта CASD.")
+    org_m = _RE_ORG_ACCOUNTS.search(combined)
+    if org_m:
+        note_parts.append(f"CASD organization_id из URL: {org_m.group(1)}")
     user_m = _RE_USER_ACCOUNTS.search(combined)
     if user_m:
         note_parts.append(f"CASD user_id из URL: {user_m.group(1)}")
     acc_m = _RE_ACCOUNT_ID.search(combined)
-    if acc_m and "/users/" not in low:
+    if acc_m and "/users/" not in low and "accountssections" not in low:
         note_parts.append(f"CASD account_id из URL: {acc_m.group(1)}")
     sec_m = _RE_SECTION_ID.search(combined)
     if sec_m:

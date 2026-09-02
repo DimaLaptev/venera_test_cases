@@ -51,6 +51,21 @@ def test_download_region_requires_credentials() -> None:
         raise AssertionError("ожидали ValueError без учётки")
 
 
+def test_download_region_requires_organization_id() -> None:
+    settings = RegionLkSettings(
+        base_url="http://example.test",
+        email="user@example.test",
+        password="secret",
+        organization_id=None,
+    )
+    try:
+        download_region_mortgage_exports(Path("."), settings)
+    except ValueError as exc:
+        assert "REGION_LK_ORGANIZATION_ID" in str(exc)
+    else:
+        raise AssertionError("ожидали ValueError без organization_id")
+
+
 def test_proxies_from_env(monkeypatch) -> None:
     monkeypatch.delenv("REGION_PROXY_URL", raising=False)
     assert _proxies_from_env() is None

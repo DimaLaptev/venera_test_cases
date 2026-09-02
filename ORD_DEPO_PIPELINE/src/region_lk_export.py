@@ -45,6 +45,12 @@ def download_region_mortgage_exports(
         raise ValueError(
             "Не заданы учётные данные ЛК Region: REGION_LK_EMAIL / REGION_LK_PASSWORD"
         )
+    organization_id = getattr(settings, "organization_id", None)
+    if organization_id is None:
+        raise ValueError(
+            "Не задан ID организации ЛК Region: REGION_LK_ORGANIZATION_ID"
+        )
+    organization_id = int(organization_id)
 
     config = casd_config_from_settings(settings)
     poll_interval = float(getattr(settings, "poll_interval", 2.0))
@@ -58,22 +64,20 @@ def download_region_mortgage_exports(
     with CasdClient(config) as client:
         login(client)
         user_id = client.user_id
-        if user_id is None:
-            raise CasdClientError(
-                "Не удалось взять userId из логина ЛК Region."
-            )
         try:
-            _accounts, pairs = discover_account_sections(client, user_id)
+            _accounts, pairs = discover_account_sections(client, organization_id)
         except (CasdAuthError, CasdClientError) as exc:
             raise CasdClientError(
                 "REGION API: не удалось получить счета/разделы.\n"
                 f"base_url={config.base_url}\n"
                 f"login_email={email}\n"
-                f"user_id={user_id}\n\n"
+                f"user_id={user_id}\n"
+                f"organization_id={organization_id}\n\n"
                 f"{exc}"
             ) from exc
         print(
-            f"REGION API: userId={user_id}, пар Account/Section={len(pairs)}",
+            f"REGION API: userId={user_id}, organizationId={organization_id}, "
+            f"пар Account/Section={len(pairs)}",
             flush=True,
         )
         if not pairs:

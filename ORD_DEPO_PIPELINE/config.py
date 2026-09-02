@@ -55,6 +55,13 @@ def _env_int(name: str, default: int) -> int:
     return int(raw.strip())
 
 
+def _env_optional_int(name: str) -> Optional[int]:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    return int(raw.strip())
+
+
 def _env_float(name: str, default: float) -> float:
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
@@ -90,6 +97,7 @@ class RegionLkSettings:
     base_url: str
     email: str
     password: str
+    organization_id: Optional[int] = None
     timeout: float = 30.0
     ssl_verify: bool = True
     proxies: Optional[dict[str, str]] = None
@@ -171,6 +179,7 @@ def load_config(pipeline_root: Path | None = None) -> AppConfig:
         base_url=(os.environ.get("REGION_LK_BASE_URL", "").strip() or "https://lk-test.region-dk.ru").rstrip("/"),
         email=os.environ.get("REGION_LK_EMAIL", "").strip(),
         password=os.environ.get("REGION_LK_PASSWORD", ""),
+        organization_id=_env_optional_int("REGION_LK_ORGANIZATION_ID"),
         timeout=_env_float("REGION_LK_TIMEOUT", 30.0),
         ssl_verify=_env_bool("REGION_LK_SSL_VERIFY", True),
         proxies=_proxies_from_env(),

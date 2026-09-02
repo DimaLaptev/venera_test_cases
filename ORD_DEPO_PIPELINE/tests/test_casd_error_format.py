@@ -40,6 +40,31 @@ def _response(
     return response
 
 
+def test_format_casd_http_error_403_org_accounts_sections() -> None:
+    text = format_casd_http_error(
+        _response(
+            url="https://lk.region-dk.ru/API/CASD/Users/Current/Organizations/13/AccountsSections?page=0",
+            path="/API/CASD/Users/Current/Organizations/13/AccountsSections?page=0",
+        ),
+        base_url="https://lk.region-dk.ru",
+        email="ops@example.com",
+        user_id=183,
+        token_len=64,
+    )
+    assert "HTTP 403" in text
+    assert "GET" in text
+    assert "/API/CASD/Users/Current/Organizations/13/AccountsSections" in text
+    assert "base_url: https://lk.region-dk.ru" in text
+    assert "login_email: ops@example.com" in text
+    assert "user_id: 183" in text
+    assert "token_len: 64" in text
+    assert "Нет доступа для совершения операции" in text
+    assert "AccountsSections" in text
+    assert "CASD organization_id из URL: 13" in text
+    assert "secret-token-value-must-not-leak" not in text
+    assert "скрыто" in text
+
+
 def test_format_casd_http_error_403_user_accounts() -> None:
     text = format_casd_http_error(
         _response(),
@@ -49,17 +74,10 @@ def test_format_casd_http_error_403_user_accounts() -> None:
         token_len=64,
     )
     assert "HTTP 403" in text
-    assert "GET" in text
     assert "/API/CASD/Users/183/Accounts" in text
-    assert "base_url: https://lk.region-dk.ru" in text
-    assert "login_email: ops@example.com" in text
-    assert "user_id: 183" in text
-    assert "token_len: 64" in text
-    assert "Нет доступа для совершения операции" in text
     assert "список счетов CASD" in text
     assert "CASD user_id из URL: 183" in text
     assert "secret-token-value-must-not-leak" not in text
-    assert "скрыто" in text
 
 
 def test_format_casd_http_error_includes_account_and_section_from_url() -> None:

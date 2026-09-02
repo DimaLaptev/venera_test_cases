@@ -108,8 +108,8 @@ def fetch_organization_accounts_sections(
         )
         if response.status_code != 200:
             raise CasdClientError(
-                f"Не удалось получить AccountsSections organization_id={organization_id}.\n"
-                + client.format_error(response)
+                f"Не удалось получить AccountsSections organizationId={organization_id}: "
+                f"HTTP {response.status_code} {response.text[:300]}"
             )
         data = response.json()
         items = _as_items(data)
