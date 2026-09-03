@@ -88,7 +88,22 @@ def download_region_mortgage_exports(
         nested = len(pairs) > 1
         saved = 0
         errors: list[str] = []
+        skip_accounts: set[int] = set()
+        sections_by_account: dict[int, list[int]] = {}
+        for acc, sec in pairs:
+            sections_by_account.setdefault(acc.id, [])
+            if sec.id not in sections_by_account[acc.id]:
+                sections_by_account[acc.id].append(sec.id)
+
         for account, section in pairs:
+            if account.id in skip_accounts:
+                print(
+                    f"REGION API: пропуск section_id={section.id} "
+                    f"({section.number!r}) — слот счёта account_id={account.id} "
+                    f"({account.number!r}) уже с ошибкой",
+                    flush=True,
+                )
+                continue
             target_dir = out_dir / f"account_{account.id}" if nested else out_dir
             try:
                 path = save_mortgage_export(
@@ -98,12 +113,14 @@ def download_region_mortgage_exports(
                     target_dir,
                     poll_interval=poll_interval,
                     wait_timeout=wait_timeout,
+                    sibling_section_ids=sections_by_account.get(account.id, []),
                 )
                 saved += 1
                 line = f"  REGION API: {path.name} → {path}"
                 print(line, flush=True)
                 msgs.append(line)
             except (CasdClientError, CasdAuthError, OSError, ValueError) as exc:
+                skip_accounts.add(account.id)
                 err_line = (
                     f"account_id={account.id} account_number={account.number!r} "
                     f"section_id={section.id} section_number={section.number!r}:\n{exc}"

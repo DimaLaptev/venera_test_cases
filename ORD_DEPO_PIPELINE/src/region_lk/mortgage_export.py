@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from region_lk.client import CasdClient, CasdClientError
+from region_lk.client import CasdAuthError, CasdClient, CasdClientError
 
 # По наблюдениям UI: StatusId=2 и ExecutedDate заполнены → экспорт готов.
 DEFAULT_READY_STATUS_IDS = frozenset({2})
@@ -72,8 +72,75 @@ def is_export_ready(
     return False
 
 
+class ExportAlreadyExistsError(CasdClientError):
+    """POST: на счёте уже есть незакрытый экспорт (часто другой sectionId)."""
+
+
 def _raise_http(client: CasdClient, response: Any, prefix: str) -> None:
     raise CasdClientError(prefix + "\n" + client.format_error(response))
+
+
+def response_says_export_exists(text: str) -> bool:
+    low = (text or "").lower()
+    return "уже существует" in low or "already exists" in low
+
+
+def _unique_section_ids(*groups: Any) -> list[int]:
+    seen: dict[int, None] = {}
+    for group in groups:
+        if group is None:
+            continue
+        if isinstance(group, int):
+            seen[int(group)] = None
+            continue
+        for sid in group:
+            if sid is None:
+                continue
+            seen[int(sid)] = None
+    return list(seen)
+
+
+def owner_section_id(status: ExportStatus, fallback: int) -> int:
+    """sectionId, на который создали экспорт (для DELETE только он)."""
+    if status.section_id:
+        return int(status.section_id)
+    return int(fallback)
+
+
+def clear_existing_exports(
+    client: CasdClient,
+    account_id: int,
+    section_ids: list[int],
+) -> list[int]:
+    """
+    Снять живой экспорт счёта: GET по известным разделам, DELETE только
+    с тем sectionId, на который экспорт создали.
+    """
+    deleted: list[int] = []
+    for sid in _unique_section_ids(section_ids):
+        try:
+            status = get_mortgage_export_status(client, account_id, sid)
+        except CasdAuthError:
+            raise
+        except CasdClientError as exc:
+            print(
+                f"REGION API: не удалось проверить экспорт "
+                f"account_id={account_id} section_id={sid}: {exc}",
+                flush=True,
+            )
+            continue
+        if status is None:
+            continue
+        owner = owner_section_id(status, sid)
+        print(
+            f"REGION API: удаляем существующий экспорт "
+            f"account_id={account_id} section_id={owner} "
+            f"(найден по GET section_id={sid})",
+            flush=True,
+        )
+        delete_mortgage_export(client, account_id, owner)
+        deleted.append(owner)
+    return deleted
 
 
 def start_mortgage_export(
@@ -91,6 +158,12 @@ def start_mortgage_export(
         json=payload,
     )
     if response.status_code not in (200, 201, 202, 204):
+        if response.status_code == 400 and response_says_export_exists(response.text or ""):
+            raise ExportAlreadyExistsError(
+                f"Старт экспорта не удался (экспорт уже существует). "
+                f"account_id={account_id} section_id={section_id}.\n"
+                + client.format_error(response)
+            )
         _raise_http(
             client,
             response,
@@ -193,32 +266,53 @@ def save_mortgage_export(
     wait_timeout: float = 120.0,
     body: dict[str, Any] | None = None,
     filename: str | None = None,
+    sibling_section_ids: list[int] | None = None,
 ) -> Path:
     """
-    Полный цикл: POST (опционально) → poll GET → GET Data → файл.
+    Полный цикл: очистка слота счёта → POST → poll GET → GET Data → файл → DELETE.
+    sibling_section_ids — разделы того же счёта (чтобы найти чужой sectionId для DELETE).
     Имя по умолчанию: export-{sectionId}.xlsx (как в UI).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    if start:
-        start_mortgage_export(client, account_id, section_id, body=body)
+    probe_ids = _unique_section_ids(sibling_section_ids, section_id)
+    posted = False
+    try:
+        if start:
+            clear_existing_exports(client, account_id, probe_ids)
+            try:
+                start_mortgage_export(client, account_id, section_id, body=body)
+            except ExportAlreadyExistsError:
+                print(
+                    f"REGION API: POST «уже существует», повторная очистка "
+                    f"account_id={account_id} section_id={section_id}",
+                    flush=True,
+                )
+                clear_existing_exports(client, account_id, probe_ids)
+                start_mortgage_export(client, account_id, section_id, body=body)
+            posted = True
 
-    wait_mortgage_export_ready(
-        client,
-        account_id,
-        section_id,
-        poll_interval=poll_interval,
-        timeout=wait_timeout,
-    )
-    raw = download_mortgage_export_bytes(client, account_id, section_id)
-    name = filename or f"export-{section_id}.xlsx"
-    target = out_dir / name
-    target.write_bytes(raw)
-
-    if cleanup:
-        try:
-            delete_mortgage_export(client, account_id, section_id)
-        except CasdClientError:
-            # файл уже сохранён — cleanup best-effort
-            pass
-
-    return target
+        wait_mortgage_export_ready(
+            client,
+            account_id,
+            section_id,
+            poll_interval=poll_interval,
+            timeout=wait_timeout,
+        )
+        raw = download_mortgage_export_bytes(client, account_id, section_id)
+        name = filename or f"export-{section_id}.xlsx"
+        target = out_dir / name
+        target.write_bytes(raw)
+        return target
+    finally:
+        if cleanup:
+            try:
+                if posted:
+                    delete_mortgage_export(client, account_id, section_id)
+                else:
+                    clear_existing_exports(client, account_id, probe_ids)
+            except CasdClientError as exc:
+                print(
+                    f"REGION API: не удалось удалить экспорт после попытки "
+                    f"account_id={account_id} section_id={section_id}: {exc}",
+                    flush=True,
+                )
