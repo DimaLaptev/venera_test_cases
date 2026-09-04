@@ -72,8 +72,12 @@ def is_export_ready(
     return False
 
 
-class ExportAlreadyExistsError(CasdClientError):
-    """POST: на счёте уже есть незакрытый экспорт (часто другой sectionId)."""
+class ExportSlotConflictError(CasdClientError):
+    """POST: слот экспорта счёта занят (другой sectionId или битая запись)."""
+
+
+class ExportAlreadyExistsError(ExportSlotConflictError):
+    """POST: API явно ответил, что экспорт уже существует."""
 
 
 def _raise_http(client: CasdClient, response: Any, prefix: str) -> None:
@@ -83,6 +87,14 @@ def _raise_http(client: CasdClient, response: Any, prefix: str) -> None:
 def response_says_export_exists(text: str) -> bool:
     low = (text or "").lower()
     return "уже существует" in low or "already exists" in low
+
+
+def response_says_slot_conflict(text: str) -> bool:
+    """Занятый слот: явный текст или CreateObject в хранилище."""
+    low = (text or "").lower()
+    if response_says_export_exists(text):
+        return True
+    return "createobject" in low or "хранилищу данных" in low
 
 
 def _unique_section_ids(*groups: Any) -> list[int]:
@@ -107,39 +119,49 @@ def owner_section_id(status: ExportStatus, fallback: int) -> int:
     return int(fallback)
 
 
+def try_delete_export(client: CasdClient, account_id: int, section_id: int) -> bool:
+    """
+    DELETE слота на конкретном разделе. 200/204 — сняли;
+    прочий 4xx (кроме 401/403, их кидает client) — экспорта на этом sectionId нет.
+    """
+    response = client.request("DELETE", export_path(account_id, section_id))
+    if response.status_code in (200, 204):
+        print(
+            f"REGION API: DELETE экспорт account_id={account_id} section_id={section_id} "
+            f"→ HTTP {response.status_code}",
+            flush=True,
+        )
+        return True
+    print(
+        f"REGION API: DELETE account_id={account_id} section_id={section_id} "
+        f"→ HTTP {response.status_code} (нет слота на этом разделе)",
+        flush=True,
+    )
+    return False
+
+
 def clear_existing_exports(
     client: CasdClient,
     account_id: int,
     section_ids: list[int],
 ) -> list[int]:
     """
-    Снять живой экспорт счёта: GET по известным разделам, DELETE только
-    с тем sectionId, на который экспорт создали.
+    Снять слот счёта: DELETE по каждому известному sectionId.
+    GET может не видеть запись (как 163/66), поэтому не полагаемся на статус.
     """
     deleted: list[int] = []
     for sid in _unique_section_ids(section_ids):
         try:
-            status = get_mortgage_export_status(client, account_id, sid)
+            if try_delete_export(client, account_id, sid):
+                deleted.append(sid)
         except CasdAuthError:
             raise
         except CasdClientError as exc:
             print(
-                f"REGION API: не удалось проверить экспорт "
+                f"REGION API: не удалось DELETE экспорт "
                 f"account_id={account_id} section_id={sid}: {exc}",
                 flush=True,
             )
-            continue
-        if status is None:
-            continue
-        owner = owner_section_id(status, sid)
-        print(
-            f"REGION API: удаляем существующий экспорт "
-            f"account_id={account_id} section_id={owner} "
-            f"(найден по GET section_id={sid})",
-            flush=True,
-        )
-        delete_mortgage_export(client, account_id, owner)
-        deleted.append(owner)
     return deleted
 
 
@@ -158,9 +180,15 @@ def start_mortgage_export(
         json=payload,
     )
     if response.status_code not in (200, 201, 202, 204):
-        if response.status_code == 400 and response_says_export_exists(response.text or ""):
-            raise ExportAlreadyExistsError(
-                f"Старт экспорта не удался (экспорт уже существует). "
+        body_text = response.text or ""
+        if response.status_code == 400 and response_says_slot_conflict(body_text):
+            cls = (
+                ExportAlreadyExistsError
+                if response_says_export_exists(body_text)
+                else ExportSlotConflictError
+            )
+            raise cls(
+                f"Старт экспорта не удался (слот счёта занят). "
                 f"account_id={account_id} section_id={section_id}.\n"
                 + client.format_error(response)
             )
@@ -281,10 +309,11 @@ def save_mortgage_export(
             clear_existing_exports(client, account_id, probe_ids)
             try:
                 start_mortgage_export(client, account_id, section_id, body=body)
-            except ExportAlreadyExistsError:
+            except ExportSlotConflictError:
                 print(
-                    f"REGION API: POST «уже существует», повторная очистка "
-                    f"account_id={account_id} section_id={section_id}",
+                    f"REGION API: POST конфликт слота, повторная очистка "
+                    f"всех известных разделов account_id={account_id} "
+                    f"перед retry section_id={section_id}",
                     flush=True,
                 )
                 clear_existing_exports(client, account_id, probe_ids)

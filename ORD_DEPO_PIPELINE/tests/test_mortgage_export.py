@@ -1,4 +1,4 @@
-"""Очистка слота экспорта: DELETE только с sectionId-владельцем."""
+"""Очистка слота экспорта: DELETE по всем известным sectionId счёта."""
 
 from __future__ import annotations
 
@@ -15,8 +15,10 @@ sys.path.insert(0, str(PIPELINE_ROOT))
 from region_lk.client import CasdClientError
 from region_lk.mortgage_export import (
     ExportAlreadyExistsError,
+    ExportSlotConflictError,
     clear_existing_exports,
     response_says_export_exists,
+    response_says_slot_conflict,
     save_mortgage_export,
     start_mortgage_export,
 )
@@ -47,30 +49,28 @@ def test_response_says_export_exists() -> None:
     assert not response_says_export_exists("Нет доступа")
 
 
-def test_clear_existing_exports_deletes_owner_section() -> None:
+def test_response_says_slot_conflict_createobject() -> None:
+    assert response_says_slot_conflict(
+        "Ошибка при выполнении команды к хранилищу данных. "
+        "Тип сервиса: Region.CASD.BL.Services.Exports.Mortgages.CreateObject"
+    )
+
+
+def test_clear_existing_exports_deletes_every_known_section() -> None:
+    """GET может не видеть слот (163/66) — DELETE всё равно по каждому sectionId."""
     client = _client(
         [
-            _resp(204),
-            _resp(
-                200,
-                {
-                    "AccountId": 28,
-                    "SectionId": 85,
-                    "StatusId": 2,
-                    "ExecutedDate": "2026-09-02",
-                },
-            ),
+            _resp(400, text="нет экспорта"),
             _resp(204),
         ]
     )
-    deleted = clear_existing_exports(client, 28, [88, 85])
-    assert deleted == [85]
+    deleted = clear_existing_exports(client, 163, [319, 66])
+    assert deleted == [66]
     methods = [c.args[0] for c in client.request.call_args_list]
     paths = [c.args[1] for c in client.request.call_args_list]
-    assert methods == ["GET", "GET", "DELETE"]
-    assert paths[0].endswith("/Sections/88")
-    assert paths[1].endswith("/Sections/85")
-    assert paths[2].endswith("/Sections/85")
+    assert methods == ["DELETE", "DELETE"]
+    assert paths[0].endswith("/Sections/319")
+    assert paths[1].endswith("/Sections/66")
 
 
 def test_start_raises_already_exists() -> None:
@@ -78,25 +78,39 @@ def test_start_raises_already_exists() -> None:
     try:
         start_mortgage_export(client, 28, 88)
     except ExportAlreadyExistsError as exc:
-        assert "уже существует" in str(exc)
+        assert "слот счёта занят" in str(exc)
     else:
         raise AssertionError("ожидали ExportAlreadyExistsError")
+
+
+def test_start_raises_slot_conflict_on_createobject() -> None:
+    client = _client(
+        [
+            _resp(
+                400,
+                text="Ошибка при выполнении команды к хранилищу данных. "
+                "Тип сервиса: Region.CASD.BL.Services.Exports.Mortgages.CreateObject",
+            )
+        ]
+    )
+    try:
+        start_mortgage_export(client, 163, 319)
+    except ExportSlotConflictError:
+        pass
+    else:
+        raise AssertionError("ожидали ExportSlotConflictError")
 
 
 def test_save_clears_other_section_then_exports(tmp_path: Path) -> None:
     xlsx = b"PK\x03\x04fake"
     client = _client(
         [
-            _resp(
-                200,
-                {"AccountId": 28, "SectionId": 85, "StatusId": 2, "ExecutedDate": "x"},
-            ),
             _resp(204),
-            _resp(204),
+            _resp(400, text="нет слота"),
             _resp(201),
             _resp(
                 200,
-                {"AccountId": 28, "SectionId": 88, "StatusId": 2, "ExecutedDate": "x"},
+                {"AccountId": 163, "SectionId": 319, "StatusId": 2, "ExecutedDate": "x"},
             ),
             _resp(200, {"Value": base64.b64encode(xlsx).decode("ascii")}),
             _resp(204),
@@ -104,40 +118,38 @@ def test_save_clears_other_section_then_exports(tmp_path: Path) -> None:
     )
     path = save_mortgage_export(
         client,
-        28,
-        88,
+        163,
+        319,
         tmp_path,
-        sibling_section_ids=[85, 88],
+        sibling_section_ids=[66, 319],
         poll_interval=0.0,
         wait_timeout=5.0,
     )
     assert path.read_bytes() == xlsx
     methods = [c.args[0] for c in client.request.call_args_list]
-    assert methods[0] == "GET"
-    assert methods[1] == "DELETE"
-    assert methods[1] and client.request.call_args_list[1].args[1].endswith("/Sections/85")
-    assert "POST" in methods
+    assert methods[:3] == ["DELETE", "DELETE", "POST"]
+    assert client.request.call_args_list[0].args[1].endswith("/Sections/66")
     assert methods[-1] == "DELETE"
-    assert client.request.call_args_list[-1].args[1].endswith("/Sections/88")
+    assert client.request.call_args_list[-1].args[1].endswith("/Sections/319")
 
 
-def test_save_retries_post_after_already_exists(tmp_path: Path) -> None:
+def test_save_retries_post_after_createobject(tmp_path: Path) -> None:
     xlsx = b"PK\x03\x04retry"
+    createobject = (
+        "Ошибка при выполнении команды к хранилищу данных. "
+        "Тип сервиса: Region.CASD.BL.Services.Exports.Mortgages.CreateObject"
+    )
     client = _client(
         [
+            _resp(400, text="нет"),
+            _resp(400, text="нет"),
+            _resp(400, text=createobject),
             _resp(204),
-            _resp(204),
-            _resp(400, text="Запрос на экспорт уже существует"),
-            _resp(
-                200,
-                {"AccountId": 28, "SectionId": 85, "StatusId": 2, "ExecutedDate": "x"},
-            ),
-            _resp(204),
-            _resp(204),
+            _resp(400, text="нет"),
             _resp(201),
             _resp(
                 200,
-                {"AccountId": 28, "SectionId": 88, "StatusId": 2, "ExecutedDate": "x"},
+                {"AccountId": 163, "SectionId": 319, "StatusId": 2, "ExecutedDate": "x"},
             ),
             _resp(200, {"Value": base64.b64encode(xlsx).decode("ascii")}),
             _resp(204),
@@ -145,16 +157,18 @@ def test_save_retries_post_after_already_exists(tmp_path: Path) -> None:
     )
     path = save_mortgage_export(
         client,
-        28,
-        88,
+        163,
+        319,
         tmp_path,
-        sibling_section_ids=[85],
+        sibling_section_ids=[66],
         poll_interval=0.0,
         wait_timeout=5.0,
     )
     assert path.read_bytes() == xlsx
     posts = [c for c in client.request.call_args_list if c.args[0] == "POST"]
     assert len(posts) == 2
+    deletes = [c.args[1] for c in client.request.call_args_list if c.args[0] == "DELETE"]
+    assert any(p.endswith("/Sections/66") for p in deletes)
 
 
 def test_save_deletes_in_finally_if_wait_fails(tmp_path: Path) -> None:
@@ -180,7 +194,7 @@ def test_save_deletes_in_finally_if_wait_fails(tmp_path: Path) -> None:
     else:
         raise AssertionError("ожидали таймаут")
     methods = [c.args[0] for c in client.request.call_args_list]
-    assert methods[0] == "GET"
+    assert methods[0] == "DELETE"
     assert methods[1] == "POST"
     assert methods[-1] == "DELETE"
     assert client.request.call_args_list[-1].args[1].endswith("/Sections/88")
